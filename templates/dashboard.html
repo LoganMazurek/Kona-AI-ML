@@ -325,6 +325,83 @@
         .predictions-table tr:hover {
             background-color: #f9fafb;
         }
+
+        .actual-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .actual-input {
+            width: 140px;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .actual-save {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: none;
+            background-color: #2f8f4e;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .actual-meta {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .test-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            background-color: #fff3e0;
+            color: #9a4d00;
+            border: 1px solid #ffd7a8;
+            margin-left: 8px;
+        }
+
+        .prediction-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 12px 0 20px;
+            flex-wrap: wrap;
+        }
+
+        .prediction-actions button {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: none;
+            background-color: #667eea;
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .prediction-actions button:disabled {
+            background-color: #c8c8c8;
+            cursor: not-allowed;
+        }
+
+        .prediction-actions label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #555;
+        }
         
         .empty-state {
             text-align: center;
@@ -461,12 +538,23 @@
         {% if recent_predictions %}
         <div class="recent-predictions">
             <h3>📈 Recent Predictions</h3>
+            {% if has_test_predictions %}
+            <div class="prediction-actions">
+                <label>
+                    <input type="checkbox" id="selectAllTests">
+                    Select all test predictions
+                </label>
+                <button type="button" id="deleteTestPredictions" disabled>Delete selected tests</button>
+            </div>
+            {% endif %}
             <table class="predictions-table">
                 <thead>
                     <tr>
+                        <th></th>
                         <th>Event</th>
                         <th>Predicted Revenue/Hour</th>
                         <th>Total Revenue</th>
+                        <th>Actual Net Sales</th>
                         <th>Confidence Range</th>
                         <th>Date</th>
                     </tr>
@@ -474,9 +562,37 @@
                 <tbody>
                     {% for pred in recent_predictions %}
                     <tr>
-                        <td>{{ pred.event_name or 'Event ' ~ pred.prediction_id[:8] }}</td>
+                        <td>
+                            {% if pred.is_test %}
+                                <input type="checkbox" class="test-select" value="{{ pred.prediction_id }}">
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ pred.event_name or 'Event ' ~ pred.prediction_id[:8] }}
+                            {% if pred.is_test %}
+                                <span class="test-badge">Test</span>
+                            {% endif %}
+                        </td>
                         <td>${{ pred.predicted_revenue_per_hour|round(2) }}</td>
                         <td>${{ pred.predicted_total_revenue|round(2) }}</td>
+                        <td>
+                            <form class="actual-form" method="POST" action="{{ url_for('update_actual_net_sales') }}">
+                                <input type="hidden" name="prediction_id" value="{{ pred.prediction_id }}">
+                                <input
+                                    class="actual-input"
+                                    type="number"
+                                    name="actual_total_net_sales"
+                                    min="0"
+                                    step="0.01"
+                                    value="{% if pred.actual_total_net_sales is not none %}{{ pred.actual_total_net_sales|round(2) }}{% endif %}"
+                                    placeholder="Add actual"
+                                />
+                                <button class="actual-save" type="submit">Save</button>
+                            </form>
+                            {% if pred.actual_revenue_per_hour is not none %}
+                                <div class="actual-meta">${{ pred.actual_revenue_per_hour|round(2) }}/hr</div>
+                            {% endif %}
+                        </td>
                         <td>${{ pred.confidence_lower|round(2) }} - ${{ pred.confidence_upper|round(2) }}</td>
                         <td>{{ pred.created_timestamp|mdy_date }}</td>
                     </tr>
@@ -486,5 +602,69 @@
         </div>
         {% endif %}
     </div>
+    <script>
+        const selectAll = document.getElementById('selectAllTests');
+        const deleteButton = document.getElementById('deleteTestPredictions');
+
+        const updateDeleteButton = () => {
+            if (!deleteButton) {
+                return;
+            }
+            const anyChecked = Array.from(document.querySelectorAll('.test-select'))
+                .some((input) => input.checked);
+            deleteButton.disabled = !anyChecked;
+        };
+
+        if (selectAll) {
+            selectAll.addEventListener('change', (event) => {
+                const checked = event.target.checked;
+                document.querySelectorAll('.test-select').forEach((input) => {
+                    input.checked = checked;
+                });
+                updateDeleteButton();
+            });
+        }
+
+        document.querySelectorAll('.test-select').forEach((input) => {
+            input.addEventListener('change', () => {
+                if (selectAll) {
+                    const allChecked = Array.from(document.querySelectorAll('.test-select'))
+                        .every((checkbox) => checkbox.checked);
+                    selectAll.checked = allChecked;
+                }
+                updateDeleteButton();
+            });
+        });
+
+        if (deleteButton) {
+            deleteButton.addEventListener('click', async () => {
+                const selected = Array.from(document.querySelectorAll('.test-select'))
+                    .filter((input) => input.checked)
+                    .map((input) => input.value);
+
+                if (!selected.length) {
+                    return;
+                }
+
+                if (!confirm(`Delete ${selected.length} test prediction(s)?`)) {
+                    return;
+                }
+
+                const response = await fetch('/predictions/delete-tests', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ prediction_ids: selected })
+                });
+
+                if (response.ok) {
+                    window.location.reload();
+                }
+            });
+        }
+
+        updateDeleteButton();
+    </script>
 </body>
 </html>

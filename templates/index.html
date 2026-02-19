@@ -122,6 +122,23 @@
             margin-top: 5px;
             font-size: 0.85em;
         }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f8f9ff;
+            font-size: 0.95em;
+            color: #333;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
         
         .submit-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -379,6 +396,11 @@
                     <h2>📅 Event Details</h2>
                     <div class="form-grid">
                         <div class="form-group">
+                            <label for="event_name">Event Name</label>
+                            <input type="text" id="event_name" name="event_name" placeholder="e.g., Spring Festival">
+                            <small>Optional display name for this event.</small>
+                        </div>
+                        <div class="form-group">
                             <label for="industry">Industry *</label>
                             <select id="industry" name="industry" required>
                                 <option value="">Select Industry</option>
@@ -449,6 +471,20 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="form-section">
+                    <h2>🧪 Testing</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="is_test">Mark as Test Prediction</label>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="is_test" name="is_test" value="1">
+                                <span>Save this as a test entry so it can be deleted later.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 
                 <button type="submit" class="submit-btn">🚀 Predict Revenue</button>
             </form>

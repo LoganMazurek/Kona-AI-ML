@@ -13,6 +13,7 @@ import os
 import json
 import tempfile
 import requests
+import uuid
 from catboost import Pool
 from weather_data import WeatherDataEnricher
 from joblib import load as joblib_load
@@ -1572,7 +1573,8 @@ def dashboard():
     available_models = get_franchise_available_models(franchise['franchise_id'])
     
     # Get recent predictions from database
-    recent_predictions = franchise_db.get_recent_predictions(franchise['franchise_id'], limit=5)
+    recent_predictions = franchise_db.get_recent_predictions(franchise['franchise_id'], limit=50)
+    has_test_predictions = any(pred.get('is_test') for pred in recent_predictions)
     
     # Try to get default model from database, fallback to first available
     default_model_id = franchise.get('default_model_id')
@@ -1589,7 +1591,53 @@ def dashboard():
                           models=available_models,
                           default_model=default_model,
                           recent_predictions=recent_predictions,
-                          target_net_sales_per_hour=franchise.get('target_net_sales_per_hour'))
+                          target_net_sales_per_hour=franchise.get('target_net_sales_per_hour'),
+                          has_test_predictions=has_test_predictions)
+
+
+@app.route('/predictions/update-actual', methods=['POST'])
+@require_auth
+def update_actual_net_sales():
+    """Update actual net sales for a prediction."""
+    prediction_id = request.form.get('prediction_id', '').strip()
+    actual_str = request.form.get('actual_total_net_sales', '').strip()
+
+    if not prediction_id or not actual_str:
+        return redirect(url_for('dashboard'))
+
+    try:
+        actual_total = float(actual_str)
+    except ValueError:
+        return redirect(url_for('dashboard'))
+
+    if actual_total < 0:
+        return redirect(url_for('dashboard'))
+
+    franchise_db.update_actual_net_sales(
+        get_current_franchise_id(),
+        prediction_id,
+        actual_total
+    )
+
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/predictions/delete-tests', methods=['POST'])
+@require_auth
+def delete_test_predictions():
+    """Delete selected test predictions for the current franchise."""
+    payload = request.get_json(silent=True) or {}
+    prediction_ids = payload.get('prediction_ids') or []
+    if not isinstance(prediction_ids, list):
+        return jsonify({'success': False, 'error': 'Invalid prediction list'}), 400
+
+    deleted = franchise_db.delete_predictions(
+        get_current_franchise_id(),
+        [str(pid) for pid in prediction_ids],
+        test_only=True
+    )
+
+    return jsonify({'success': True, 'deleted': deleted})
 
 
 @app.route('/select-model', methods=['POST'])
@@ -1780,6 +1828,37 @@ def predict():
         confidence_explanations = generate_confidence_explanation(
             confidence_pct, float(cv_mae or 312.66), total_net_sales, feature_contributions
         )
+
+        is_test = str(form_data.get('is_test', '')).lower() in {'1', 'true', 'on', 'yes'}
+        event_name = (form_data.get('event_name') or '').strip()
+        if not event_name:
+            industry_label = form_data.get('industry', 'Event')
+            city_label = form_data.get('city', 'Unknown')
+            event_name = f"{industry_label} - {city_label} ({event_date_str})"
+        model_id = f"franchise_{franchise_id}" if model_type == 'franchise_specific' else 'clean_layers_ensemble'
+        prediction_id = uuid.uuid4().hex
+        actual_total = None
+        actual_str = (form_data.get('actual_total_net_sales') or '').strip()
+        if actual_str:
+            try:
+                actual_total = float(actual_str)
+            except ValueError:
+                actual_total = None
+        saved = franchise_db.record_prediction(
+            prediction_id=prediction_id,
+            franchise_id=franchise_id,
+            model_id=model_id,
+            event_name=event_name,
+            duration_hours=duration,
+            predicted_revenue_per_hour=float(net_sales_per_hour),
+            predicted_total_revenue=float(total_net_sales),
+            confidence_lower=float(total_lower),
+            confidence_upper=float(total_upper),
+            is_test=is_test,
+            actual_total_net_sales=actual_total
+        )
+        if not saved:
+            print("[WARN] Failed to save prediction record")
         
         # Return results in format expected by frontend
         franchise = franchise_db.get_franchise(franchise_id)

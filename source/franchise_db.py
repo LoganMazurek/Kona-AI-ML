@@ -87,10 +87,15 @@ class FranchiseDatabase:
                 franchise_id TEXT NOT NULL,
                 model_id TEXT,
                 event_name TEXT,
+                duration_hours REAL,
                 predicted_revenue_per_hour REAL,
                 predicted_total_revenue REAL,
                 confidence_lower REAL,
                 confidence_upper REAL,
+                actual_total_net_sales REAL,
+                actual_revenue_per_hour REAL,
+                actual_updated_timestamp TIMESTAMP,
+                is_test BOOLEAN DEFAULT 0,
                 created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id),
                 FOREIGN KEY(model_id) REFERENCES models(model_id)
@@ -114,6 +119,11 @@ class FranchiseDatabase:
 
         # Ensure new columns exist for older databases
         self._ensure_column_exists(cursor, 'franchises', 'target_net_sales_per_hour', 'REAL')
+        self._ensure_column_exists(cursor, 'predictions', 'duration_hours', 'REAL')
+        self._ensure_column_exists(cursor, 'predictions', 'actual_total_net_sales', 'REAL')
+        self._ensure_column_exists(cursor, 'predictions', 'actual_revenue_per_hour', 'REAL')
+        self._ensure_column_exists(cursor, 'predictions', 'actual_updated_timestamp', 'TIMESTAMP')
+        self._ensure_column_exists(cursor, 'predictions', 'is_test', 'BOOLEAN DEFAULT 0')
         
         conn.commit()
         conn.close()
@@ -394,22 +404,31 @@ class FranchiseDatabase:
     # ===== PREDICTION HISTORY =====
     
     def record_prediction(self, prediction_id: str, franchise_id: str, model_id: str,
-                         event_name: str, predicted_revenue_per_hour: float,
+                         event_name: str, duration_hours: float,
+                         predicted_revenue_per_hour: float,
                          predicted_total_revenue: float, confidence_lower: float,
-                         confidence_upper: float) -> bool:
+                         confidence_upper: float, is_test: bool = False,
+                         actual_total_net_sales: Optional[float] = None) -> bool:
         """Record a prediction for history tracking."""
         try:
+            actual_per_hour = None
+            if actual_total_net_sales is not None and duration_hours:
+                actual_per_hour = actual_total_net_sales / duration_hours
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO predictions 
-                (prediction_id, franchise_id, model_id, event_name,
+                (prediction_id, franchise_id, model_id, event_name, duration_hours,
                  predicted_revenue_per_hour, predicted_total_revenue,
-                 confidence_lower, confidence_upper)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (prediction_id, franchise_id, model_id, event_name,
+                 confidence_lower, confidence_upper, actual_total_net_sales,
+                 actual_revenue_per_hour, actual_updated_timestamp, is_test)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END,
+                        ?)
+            ''', (prediction_id, franchise_id, model_id, event_name, duration_hours,
                   predicted_revenue_per_hour, predicted_total_revenue,
-                  confidence_lower, confidence_upper))
+                  confidence_lower, confidence_upper, actual_total_net_sales,
+                  actual_per_hour, actual_total_net_sales, int(is_test)))
             conn.commit()
             conn.close()
             return True
@@ -429,6 +448,68 @@ class FranchiseDatabase:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    def update_actual_net_sales(self, franchise_id: str, prediction_id: str,
+                                actual_total_net_sales: float) -> bool:
+        """Update actual net sales for a prediction and compute per-hour values."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT duration_hours FROM predictions
+                   WHERE franchise_id = ? AND prediction_id = ?''',
+                (franchise_id, prediction_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return False
+
+            duration_hours = row['duration_hours']
+            actual_per_hour = None
+            if duration_hours and duration_hours > 0:
+                actual_per_hour = actual_total_net_sales / duration_hours
+
+            cursor.execute(
+                '''UPDATE predictions
+                   SET actual_total_net_sales = ?,
+                       actual_revenue_per_hour = ?,
+                       actual_updated_timestamp = datetime('now')
+                   WHERE franchise_id = ? AND prediction_id = ?''',
+                (actual_total_net_sales, actual_per_hour, franchise_id, prediction_id)
+            )
+            conn.commit()
+            updated = cursor.rowcount > 0
+            conn.close()
+            return updated
+        except Exception:
+            return False
+
+    def delete_predictions(self, franchise_id: str, prediction_ids: List[str],
+                           test_only: bool = True) -> int:
+        """Delete predictions for a franchise and return count deleted."""
+        if not prediction_ids:
+            return 0
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            placeholders = ','.join(['?'] * len(prediction_ids))
+            params = [franchise_id] + prediction_ids
+            test_filter = ' AND is_test = 1' if test_only else ''
+            cursor.execute(
+                f'''DELETE FROM predictions
+                    WHERE franchise_id = ?
+                    AND prediction_id IN ({placeholders}){test_filter}
+                ''',
+                params
+            )
+            deleted = cursor.rowcount
+            conn.commit()
+            conn.close()
+            return deleted
+        except Exception:
+            return 0
     
     # ===== BATCH UPLOAD OPERATIONS =====
     
