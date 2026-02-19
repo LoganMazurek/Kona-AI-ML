@@ -9,7 +9,7 @@ services:
       - "8001:8000"
     environment:
       FLASK_ENV: "production"
-      SECRET_KEY: "change-me"
+      SECRET_KEY: "FY8hyNv6wCxhboYdS6_Mqc7cj9XVduqYODey2JNorxDvj2ohWReFTTfnYCNauAAb"
       SESSION_COOKIE_SECURE: "true"
     volumes:
       - ./source/franchise_data.db:/app/source/franchise_data.db
