@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.sqlite
+*.db-journal
+.venv
+venv
+.env
+outputs/

@@ -67,7 +67,11 @@ except ImportError:
     _zip_search_engine = None
     print("Warning: uszipcode package not available. Install with: pip install uszipcode")
 
-app = Flask(__name__)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+TEMPLATES_DIR = os.path.join(PARENT_DIR, 'templates')
+
+app = Flask(__name__, template_folder=TEMPLATES_DIR)
 
 DATE_DISPLAY_FORMAT = "%m/%d/%Y"
 
@@ -117,8 +121,6 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 # Get the script directory to make paths relative to it
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 
 # Initialize database and auth
 DB_PATH = os.path.join(SCRIPT_DIR, 'franchise_data.db')
