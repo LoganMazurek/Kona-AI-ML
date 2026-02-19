@@ -286,6 +286,9 @@ print(f"Weather provider initialized: {WEATHER_ENRICHER.weather_provider is not 
 
 # ===== AVAILABLE MODELS DETECTION =====
 
+def _get_prod_models_dir():
+    return MODEL_PATH or os.path.join(PARENT_DIR, 'production', 'models')
+
 def get_available_models():
     """
     Discover available models from the production deployment.
@@ -294,7 +297,7 @@ def get_available_models():
     models = []
     
     # Try to load deployment metadata first
-    metadata_path = os.path.join(SCRIPT_DIR, 'production', 'models', 'deployment_metadata.json')
+    metadata_path = os.path.join(_get_prod_models_dir(), 'deployment_metadata.json')
     if os.path.exists(metadata_path):
         try:
             with open(metadata_path, 'r') as f:
@@ -339,7 +342,7 @@ def get_available_models():
             print(f"[WARN] Could not load deployment metadata: {e}")
     
     # Check for standalone models in production directory
-    prod_dir = os.path.join(SCRIPT_DIR, 'production', 'models')
+    prod_dir = _get_prod_models_dir()
     if os.path.isdir(prod_dir):
         # Look for standalone model files
         for filename in os.listdir(prod_dir):
@@ -375,7 +378,7 @@ def get_franchise_available_models(franchise_id):
     
     # Check for franchise-specific model
     franchise_model_path = os.path.join(
-        SCRIPT_DIR, 'production', 'models', f'franchise_{franchise_id}_model.joblib'
+        _get_prod_models_dir(), f'franchise_{franchise_id}_model.joblib'
     )
     
     if os.path.exists(franchise_model_path):
