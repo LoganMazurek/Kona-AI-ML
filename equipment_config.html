@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equipment Configuration - Kona Ice AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 4px;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            color: #1976D2;
+        }
+        .equipment-types {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .type-card {
+            border: 2px solid #ddd;
+            padding: 15px;
+            border-radius: 6px;
+            transition: border-color 0.3s;
+        }
+        .type-card:hover {
+            border-color: #0066cc;
+        }
+        .type-card h4 {
+            margin: 0 0 8px 0;
+            color: #0066cc;
+        }
+        .type-card .icon {
+            font-size: 30px;
+            margin-bottom: 8px;
+        }
+        .equipment-form {
+            margin-top: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        .equipment-list {
+            margin-top: 30px;
+        }
+        .equipment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background: #fafafa;
+        }
+        .equipment-name {
+            font-weight: 600;
+            flex: 1;
+        }
+        .equipment-type {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 0 10px;
+        }
+        .type-truck { background: #e3f2fd; color: #1976D2; }
+        .type-blended { background: #f3e5f5; color: #7B1FA2; }
+        .type-kiosk { background: #fff3e0; color: #E65100; }
+        .type-mini { background: #e8f5e9; color: #2E7D32; }
+        .btn-delete {
+            background: #dc3545;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-delete:hover {
+            background: #c82333;
+        }
+        .success-message {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍧 Equipment Configuration</h1>
+        <p class="subtitle">Configure your franchise's equipment to track smoothie capability</p>
+
+        <div class="info-box">
+            <h3>Why Track Equipment Types?</h3>
+            <p>Equipment type helps us:</p>
+            <ul>
+                <li><strong>Track smoothie availability:</strong> Blended trucks have smoothie capability</li>
+                <li><strong>Predict performance:</strong> Different equipment types perform differently</li>
+                <li><strong>Plan deployments:</strong> Optimize which equipment to send to events</li>
+            </ul>
+        </div>
+
+        <h2>Standard Equipment Types</h2>
+        <div class="equipment-types">
+            <div class="type-card">
+                <div class="icon">🚚</div>
+                <h4>Truck</h4>
+                <p>Standard Kona Ice truck</p>
+            </div>
+            <div class="type-card">
+                <div class="icon">🍓</div>
+                <h4>Blended Truck</h4>
+                <p>Truck with smoothie/blended capability</p>
+            </div>
+            <div class="type-card">
+                <div class="icon">🏪</div>
+                <h4>Kiosk</h4>
+                <p>Fixed kiosk location</p>
+            </div>
+            <div class="type-card">
+                <div class="icon">📦</div>
+                <h4>Mini</h4>
+                <p>Compact mini unit</p>
+            </div>
+        </div>
+
+        <div id="success-message" class="success-message"></div>
+
+        <h2>Add Equipment Mapping</h2>
+        <form id="equipment-form" class="equipment-form">
+            <div class="form-group">
+                <label for="franchise-name">Franchise Name</label>
+                <input type="text" id="franchise-name" required 
+                       placeholder="e.g., CentralNaperville">
+                <div class="help-text">Your franchise identifier</div>
+            </div>
+
+            <div class="form-group">
+                <label for="equipment-name">Equipment Name</label>
+                <input type="text" id="equipment-name" required 
+                       placeholder="e.g., Kato - Kev 41, Betty - KEV 05">
+                <div class="help-text">Your internal name for this equipment</div>
+            </div>
+
+            <div class="form-group">
+                <label for="equipment-type">Standard Equipment Type</label>
+                <select id="equipment-type" required>
+                    <option value="">-- Select Type --</option>
+                    <option value="truck">Truck (Standard)</option>
+                    <option value="Blended truck">Blended Truck (Has Smoothies)</option>
+                    <option value="kiosk">Kiosk</option>
+                    <option value="mini">Mini</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="notes">Notes (Optional)</label>
+                <textarea id="notes" 
+                          placeholder="e.g., Upgrading to blended truck in 2026"></textarea>
+            </div>
+
+            <button type="submit">Add Equipment Mapping</button>
+        </form>
+
+        <div class="equipment-list">
+            <h2>Current Equipment Configuration</h2>
+            <div id="equipment-items">
+                <p style="color: #999; text-align: center; padding: 20px;">
+                    No equipment configured yet. Add your first equipment above.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulated equipment storage (in production, this would use a backend API)
+        let equipmentConfig = JSON.parse(localStorage.getItem('equipmentConfig') || '{}');
+
+        // Load existing equipment on page load
+        renderEquipmentList();
+
+        document.getElementById('equipment-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const franchiseName = document.getElementById('franchise-name').value.trim();
+            const equipmentName = document.getElementById('equipment-name').value.trim();
+            const equipmentType = document.getElementById('equipment-type').value;
+            const notes = document.getElementById('notes').value.trim();
+
+            // Store configuration
+            if (!equipmentConfig[franchiseName]) {
+                equipmentConfig[franchiseName] = [];
+            }
+
+            equipmentConfig[franchiseName].push({
+                name: equipmentName,
+                type: equipmentType,
+                notes: notes,
+                timestamp: new Date().toISOString()
+            });
+
+            // Save to localStorage (in production, send to backend)
+            localStorage.setItem('equipmentConfig', JSON.stringify(equipmentConfig));
+
+            // Show success message
+            showSuccessMessage(`✓ Added: ${equipmentName} → ${equipmentType}`);
+
+            // Clear form
+            document.getElementById('equipment-name').value = '';
+            document.getElementById('equipment-type').value = '';
+            document.getElementById('notes').value = '';
+
+            // Re-render list
+            renderEquipmentList();
+        });
+
+        function renderEquipmentList() {
+            const container = document.getElementById('equipment-items');
+            
+            // Get current franchise
+            const currentFranchise = document.getElementById('franchise-name').value.trim();
+            
+            if (!currentFranchise || !equipmentConfig[currentFranchise] || equipmentConfig[currentFranchise].length === 0) {
+                container.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No equipment configured yet. Add your first equipment above.</p>';
+                return;
+            }
+
+            const items = equipmentConfig[currentFranchise];
+            container.innerHTML = items.map((item, idx) => `
+                <div class="equipment-item">
+                    <span class="equipment-name">${item.name}</span>
+                    <span class="equipment-type type-${item.type.toLowerCase().replace(' ', '-')}">${item.type}</span>
+                    <button class="btn-delete" onclick="deleteEquipment('${currentFranchise}', ${idx})">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        function deleteEquipment(franchise, index) {
+            if (confirm('Delete this equipment mapping?')) {
+                equipmentConfig[franchise].splice(index, 1);
+                localStorage.setItem('equipmentConfig', JSON.stringify(equipmentConfig));
+                renderEquipmentList();
+                showSuccessMessage('✓ Equipment mapping deleted');
+            }
+        }
+
+        function showSuccessMessage(message) {
+            const msgBox = document.getElementById('success-message');
+            msgBox.textContent = message;
+            msgBox.style.display = 'block';
+            setTimeout(() => {
+                msgBox.style.display = 'none';
+            }, 3000);
+        }
+
+        // Auto-refresh list when franchise name changes
+        document.getElementById('franchise-name').addEventListener('change', renderEquipmentList);
+        document.getElementById('franchise-name').addEventListener('blur', renderEquipmentList);
+    </script>
+</body>
+</html>

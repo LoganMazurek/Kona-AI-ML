@@ -1,0 +1,15 @@
+pandas>=2.0
+numpy>=1.25
+scikit-learn>=1.2
+xgboost>=1.7
+optuna>=3.0
+matplotlib>=3.7
+pytest>=7.0
+requests>=2.31.0
+uszipcode==0.2.6
+sqlalchemy-mate<2.0
+SQLAlchemy<2.0
+census>=0.8.17
+catboost>=1.2
+lightgbm>=4.0flask>=2.0
+shap>=0.41
