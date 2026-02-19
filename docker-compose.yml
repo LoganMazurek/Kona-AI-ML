@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  kona-ml:
+    build: .
+    container_name: kona-ml
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      FLASK_ENV: "production"
+      SECRET_KEY: "change-me"
+      SESSION_COOKIE_SECURE: "true"
+    volumes:
+      - ./source/franchise_data.db:/app/source/franchise_data.db

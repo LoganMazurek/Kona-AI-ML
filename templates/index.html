@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Revenue Predictor - Kona AI/ML</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .nav-bar {
+            max-width: 900px;
+            margin: 0 auto 15px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-decoration: none;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+
+        .nav-btn:hover {
+            background-color: rgba(255, 255, 255, 0.35);
+            transform: translateY(-1px);
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .form-container {
+            padding: 40px;
+        }
+        
+        .form-section {
+            margin-bottom: 35px;
+        }
+        
+        .form-section h2 {
+            color: #667eea;
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        
+        .form-group input,
+        .form-group select {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .form-group small {
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.85em;
+        }
+        
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+        
+        .results-container {
+            display: none;
+            margin-top: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            animation: slideIn 0.5s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .results-container.show {
+            display: block;
+        }
+        
+        .result-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .result-card h3 {
+            color: #667eea;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+        }
+        
+        .prediction-value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #764ba2;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .confidence-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 1s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .range-display {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .range-item {
+            text-align: center;
+        }
+        
+        .range-item .label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        
+        .range-item .value {
+            color: #333;
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .info-box p {
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .feature-item {
+            background: #f8f9fa;
+            border-left: 3px solid #667eea;
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 5px;
+        }
+        
+        .feature-item .feature-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .feature-item .feature-importance {
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .feature-item .feature-explanation {
+            color: #555;
+            font-size: 0.9em;
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+        
+        .confidence-insight {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+            border-left: 3px solid #28a745;
+        }
+        
+        .confidence-insight.warning {
+            border-left-color: #ffc107;
+        }
+        
+        .confidence-insight.info {
+            border-left-color: #17a2b8;
+        }
+        
+        .confidence-insight p {
+            margin: 0;
+            color: #555;
+            font-size: 0.95em;
+        }
+
+        .prediction-card.good {
+            background: linear-gradient(135deg, #e8f7ee 0%, #f4fbf6 100%);
+            border: 2px solid #2f8f4e;
+        }
+
+        .prediction-card.warn {
+            background: linear-gradient(135deg, #fff5e6 0%, #fffaf2 100%);
+            border: 2px solid #d7a400;
+        }
+
+        .prediction-card.bad {
+            background: linear-gradient(135deg, #ffe9ea 0%, #fff5f5 100%);
+            border: 2px solid #c43b3b;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a class="nav-btn" href="/dashboard">Dashboard</a>
+        <a class="nav-btn" href="/logout">Logout</a>
+    </div>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Event Revenue Predictor</h1>
+            <p>AI-Powered Net Sales Forecasting with CatBoost ML</p>
+        </div>
+        
+        <div class="form-container">
+            <div class="info-box">
+                <p><strong>Welcome!</strong> Enter your event details below. Demographics are automatically fetched from the U.S. Census Bureau based on your ZIP code.</p>
+            </div>
+            
+            <form id="predictionForm" method="POST" action="/predict">
+                <!-- Event Details Section -->
+                <div class="form-section">
+                    <h2>📅 Event Details</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="industry">Industry *</label>
+                            <select id="industry" name="industry" required>
+                                <option value="">Select Industry</option>
+                                <option value="Athletics">Athletics</option>
+                                <option value="Church">Church</option>
+                                <option value="Community">Community</option>
+                                <option value="Corporate">Corporate</option>
+                                <option value="Daycare">Daycare</option>
+                                <option value="Education">Education</option>
+                                <option value="Festival">Festival</option>
+                                <option value="Other">Other</option>
+                                <option value="Private">Private</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="equipment_type">Equipment Type *</label>
+                            <select id="equipment_type" name="equipment_type" required>
+                                <option value="">Select Equipment</option>
+                                <option value="truck">Truck</option>
+                                <option value="blended truck">Blended Truck</option>
+                                <option value="kiosk">Kiosk</option>
+                                <option value="mini">Mini</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="event_date">Event Date *</label>
+                            <input type="date" id="event_date" name="event_date" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="start_time">Start Time *</label>
+                            <input type="time" id="start_time" name="start_time" value="09:00" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="duration">Duration (Hours) *</label>
+                            <input type="number" id="duration" name="duration" min="0.5" max="24" step="0.5" value="4.0" required>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Location Section -->
+                <div class="form-section">
+                    <h2>📍 Location</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="city">City *</label>
+                            <input type="text" id="city" name="city" placeholder="e.g., Naperville" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="zip_code">ZIP Code *</label>
+                            <input type="text" id="zip_code" name="zip_code" pattern="[0-9]{5}" placeholder="60540" required>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Weather Section -->
+                <div class="form-section">
+                    <h2>🌤️ Weather (Optional)</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="temperature">Expected Temperature (°F)</label>
+                            <input type="number" id="temperature" name="temperature" min="-20" max="120" step="1" placeholder="Leave blank to auto-detect">
+                            <small>If blank, we'll use a weather API call to make a best-guess forecast</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="submit-btn">🚀 Predict Revenue</button>
+            </form>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; color: #667eea; font-weight: 600;">Analyzing event data...</p>
+            </div>
+            
+            <div class="error-message" id="errorMessage"></div>
+            
+            <div class="results-container" id="results">
+                <div class="result-card prediction-card" id="predictionCard">
+                    <h3>💵 Predicted Net Sales</h3>
+                    <div class="prediction-value" id="totalSales">$0.00</div>
+                    <p style="text-align: center; color: #666; font-size: 1.1em;">
+                        <span id="perHourRate">$0.00</span> per hour × <span id="durationDisplay">0</span> hours
+                    </p>
+                    <p id="targetNetSales" style="text-align: center; color: #355; font-size: 0.95em; display: none;">
+                        Target: $<span id="targetNetSalesValue">0.00</span>/hour
+                    </p>
+                </div>
+                
+                <div class="result-card">
+                    <h3>📊 Confidence Level</h3>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" id="confidenceFill">0%</div>
+                    </div>
+                    <p style="text-align: center; color: #666; margin-top: 10px;">
+                        Based on model CV MAE: <span id="modelMae">$0.00</span>
+                    </p>
+                </div>
+                
+                <div class="result-card">
+                    <h3>📈 Expected Range (95% Confidence)</h3>
+                    <div class="range-display">
+                        <div class="range-item">
+                            <div class="label">Lower Bound</div>
+                            <div class="value" id="lowerBound">$0.00</div>
+                        </div>
+                        <div class="range-item">
+                            <div class="label">Expected</div>
+                            <div class="value" id="expectedValue">$0.00</div>
+                        </div>
+                        <div class="range-item">
+                            <div class="label">Upper Bound</div>
+                            <div class="value" id="upperBound">$0.00</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 8px;">
+                        <p style="color: #856404; font-size: 0.95em;">
+                            <strong>Per Hour Range:</strong> 
+                            $<span id="perHourLower">0.00</span> - $<span id="perHourUpper">0.00</span>
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>ℹ️ Event Summary</h3>
+                    <div style="line-height: 1.8;">
+                        <p><strong>Industry:</strong> <span id="summaryIndustry">-</span></p>
+                        <p><strong>Location:</strong> <span id="summaryCity">-</span>, ZIP <span id="summaryZip">-</span></p>
+                        <p><strong>Date & Time:</strong> <span id="summaryDateTime">-</span></p>
+                        <p><strong>Duration:</strong> <span id="summaryDuration">-</span></p>
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>📊 ZIP Demographics (Census Data)</h3>
+                    <div style="line-height: 1.8;">
+                        <p><strong>Median Income:</strong> <span id="demoIncome">-</span></p>
+                        <p><strong>Population:</strong> <span id="demoPopulation">-</span></p>
+                        <p><strong>Unemployment:</strong> <span id="demoUnemployment">-</span></p>
+                        <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                            <em>Data source: <span id="demoSource">-</span></em>
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>🎯 Key Prediction Factors</h3>
+                    <div id="featureContributions" style="line-height: 1.6;">
+                        <p style="color: #666; margin-bottom: 15px;">Top factors influencing this prediction:</p>
+                        <!-- Feature contributions will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>🔍 Prediction Confidence Insights</h3>
+                    <div id="confidenceExplanations" style="line-height: 1.6;">
+                        <p style="color: #666; margin-bottom: 15px;">Understanding the prediction reliability:</p>
+                        <!-- Confidence explanations will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <div class="result-card" id="advancedExplanationCard" style="display: none;">
+                    <h3>🧠 Advanced Model Analysis</h3>
+                    <div id="advancedExplanations" style="line-height: 1.8;">
+                        <!-- Advanced explanations will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Wait for DOM to be fully loaded before attaching event listeners
+        function initializeForm() {
+            // Set default date to today
+            const eventDateInput = document.getElementById('event_date');
+            if (eventDateInput) {
+                eventDateInput.valueAsDate = new Date();
+            }
+            
+            // Form submission handler
+            const form = document.getElementById('predictionForm');
+            if (form) {
+                form.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+            
+            // Show loading, hide results and errors
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('results').classList.remove('show');
+            document.getElementById('errorMessage').classList.remove('show');
+            
+            // Get form data
+            const formData = new FormData(this);
+            
+            try {
+                // Send prediction request
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                // Hide loading
+                document.getElementById('loading').classList.remove('show');
+                
+                // Check for authentication errors
+                if (!response.ok && response.status === 401) {
+                    showError(data.error || 'Session expired. Redirecting to login...');
+                    // Redirect to login after showing error
+                    setTimeout(() => {
+                        window.location.href = data.redirect || '/login';
+                    }, 2000);
+                    return;
+                }
+                
+                if (data.success) {
+                    // Display results
+                    displayResults(data);
+                } else {
+                    // Show error
+                    showError(data.error || 'An error occurred during prediction.');
+                }
+            } catch (error) {
+                document.getElementById('loading').classList.remove('show');
+                showError('Failed to connect to prediction server: ' + error.message);
+            }
+                });
+            } else {
+                console.error('Prediction form not found in DOM');
+            }
+        }
+        
+        function displayResults(data) {
+            // Helper to safely format numbers
+            function formatCurrency(num) {
+                if (num === null || num === undefined) return 'N/A';
+                return Number(num).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            }
+            
+            // Update values
+            document.getElementById('totalSales').textContent = '$' + formatCurrency(data.total_net_sales);
+            document.getElementById('perHourRate').textContent = '$' + formatCurrency(data.net_sales_per_hour);
+            document.getElementById('durationDisplay').textContent = data.duration;
+            
+            // Update confidence
+            const confidencePct = Math.round(data.confidence_percentage);
+            document.getElementById('confidenceFill').textContent = confidencePct + '%';
+            document.getElementById('confidenceFill').style.width = confidencePct + '%';
+            
+            // Update MAE
+            document.getElementById('modelMae').textContent = '$' + formatCurrency(data.model_cv_mae);
+            
+            // Update ranges
+            document.getElementById('lowerBound').textContent = '$' + formatCurrency(data.range_lower);
+            document.getElementById('expectedValue').textContent = '$' + formatCurrency(data.total_net_sales);
+            document.getElementById('upperBound').textContent = '$' + formatCurrency(data.range_upper);
+            
+            document.getElementById('perHourLower').textContent = formatCurrency(data.per_hour_lower);
+            document.getElementById('perHourUpper').textContent = formatCurrency(data.per_hour_upper);
+            
+            // Update summary
+            document.getElementById('summaryIndustry').textContent = data.event_details.industry;
+            document.getElementById('summaryCity').textContent = data.event_details.city;
+            document.getElementById('summaryZip').textContent = data.event_details.zip_code;
+            document.getElementById('summaryDateTime').textContent = data.event_details.date + ' at ' + data.event_details.time;
+            document.getElementById('summaryDuration').textContent = data.event_details.duration + ' hours';
+            
+            // Update demographics
+            document.getElementById('demoIncome').textContent = data.demographics.median_income;
+            document.getElementById('demoPopulation').textContent = data.demographics.population;
+            document.getElementById('demoUnemployment').textContent = data.demographics.unemployment_rate;
+            document.getElementById('demoSource').textContent = data.demographics.source === 'census_api' ? 'U.S. Census Bureau API' : 'Default estimates';
+            
+            // Update feature contributions
+            if (data.feature_contributions) {
+                const contributionsDiv = document.getElementById('featureContributions');
+                let contributionsHTML = '<p style="color: #666; margin-bottom: 15px;">Top factors influencing this prediction:</p>';
+                
+                data.feature_contributions.slice(0, 6).forEach(feature => {
+                    const displayName = feature.display_name || feature.feature;
+                    contributionsHTML += `
+                        <div class="feature-item">
+                            <div class="feature-name">
+                                ${displayName}
+                                <span class="feature-importance">${feature.importance}%</span>
+                            </div>
+                            <div class="feature-explanation">${feature.explanation}</div>
+                        </div>
+                    `;
+                });
+                
+                contributionsDiv.innerHTML = contributionsHTML;
+            }
+            
+            // Update confidence explanations
+            if (data.confidence_explanations) {
+                const explanationsDiv = document.getElementById('confidenceExplanations');
+                let explanationsHTML = '<p style="color: #666; margin-bottom: 15px;">Understanding the prediction reliability:</p>';
+                
+                data.confidence_explanations.forEach(explanation => {
+                    let cssClass = 'confidence-insight';
+                    if (explanation.includes('🟠') || explanation.includes('⚠️')) {
+                        cssClass += ' warning';
+                    } else if (explanation.includes('📊') || explanation.includes('💰')) {
+                        cssClass += ' info';
+                    }
+                    
+                    explanationsHTML += `
+                        <div class="${cssClass}">
+                            <p>${explanation}</p>
+                        </div>
+                    `;
+                });
+                
+                explanationsDiv.innerHTML = explanationsHTML;
+            }
+            
+            // Update feature contributions
+            if (data.feature_contributions) {
+                const featureContainer = document.getElementById('featureContributions');
+                featureContainer.innerHTML = '<p style="color: #666; margin-bottom: 15px;">Top factors influencing this prediction:</p>';
+                
+                // Show top 5 features for clarity
+                const topFeatures = data.feature_contributions.slice(0, 5);
+                topFeatures.forEach(feature => {
+                    const featureDiv = document.createElement('div');
+                    featureDiv.className = 'feature-item';
+                    const displayName = feature.display_name || feature.feature;
+                    
+                    featureDiv.innerHTML = `
+                        <div class="feature-name">
+                            ${displayName}
+                            <span class="feature-importance">${feature.importance}%</span>
+                        </div>
+                        <div class="feature-explanation">${feature.explanation}</div>
+                    `;
+                    
+                    featureContainer.appendChild(featureDiv);
+                });
+            }
+            
+            // Update confidence explanations
+            if (data.confidence_explanations) {
+                const confidenceContainer = document.getElementById('confidenceExplanations');
+                confidenceContainer.innerHTML = '<p style="color: #666; margin-bottom: 15px;">Understanding the prediction reliability:</p>';
+                
+                data.confidence_explanations.forEach(explanation => {
+                    const insightDiv = document.createElement('div');
+                    
+                    // Determine the type of insight for styling
+                    let insightClass = 'confidence-insight';
+                    if (explanation.includes('🟠') || explanation.includes('⚠️')) {
+                        insightClass += ' warning';
+                    } else if (explanation.includes('🟡') || explanation.includes('📊')) {
+                        insightClass += ' info';
+                    }
+                    
+                    insightDiv.className = insightClass;
+                    insightDiv.innerHTML = `<p>${explanation}</p>`;
+                    
+                    confidenceContainer.appendChild(insightDiv);
+                });
+            }
+            
+            // Highlight prediction vs target (if available)
+            if (data.target_net_sales_per_hour) {
+                const targetValue = Number(data.target_net_sales_per_hour);
+                const predictionValue = Number(data.net_sales_per_hour);
+                const predictionCard = document.getElementById('predictionCard');
+                const targetContainer = document.getElementById('targetNetSales');
+                const targetValueSpan = document.getElementById('targetNetSalesValue');
+
+                if (predictionCard && targetContainer && targetValueSpan) {
+                    predictionCard.classList.remove('good', 'warn', 'bad');
+                    targetContainer.style.display = 'block';
+                    targetValueSpan.textContent = formatCurrency(targetValue);
+
+                    if (predictionValue >= targetValue) {
+                        predictionCard.classList.add('good');
+                    } else if (predictionValue >= targetValue * 0.9) {
+                        predictionCard.classList.add('warn');
+                    } else {
+                        predictionCard.classList.add('bad');
+                    }
+                }
+            } else {
+                const predictionCard = document.getElementById('predictionCard');
+                const targetContainer = document.getElementById('targetNetSales');
+                if (predictionCard) {
+                    predictionCard.classList.remove('good', 'warn', 'bad');
+                }
+                if (targetContainer) {
+                    targetContainer.style.display = 'none';
+                }
+            }
+
+            // Display advanced explanations if available
+            if (data.advanced_explanation) {
+                displayAdvancedExplanations(data.advanced_explanation);
+            }
+            
+            // Show results
+            document.getElementById('results').classList.add('show');
+            
+            // Scroll to results
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        function displayAdvancedExplanations(explanation) {
+            const card = document.getElementById('advancedExplanationCard');
+            const container = document.getElementById('advancedExplanations');
+            
+            if (!explanation || !container) return;
+            
+            container.innerHTML = '';
+            let hasContent = false;
+            
+            // Display general explanations
+            if (explanation.explanations && explanation.explanations.length > 0) {
+                hasContent = true;
+                container.innerHTML += '<div style="margin-bottom: 20px;"><strong>Key Insights:</strong></div>';
+                explanation.explanations.forEach(exp => {
+                    const div = document.createElement('div');
+                    div.className = 'confidence-insight info';
+                    div.innerHTML = `<p>${exp}</p>`;
+                    container.appendChild(div);
+                });
+            }
+            
+            // Display feature contributions with impact analysis
+            if (explanation.feature_contributions && explanation.feature_contributions.length > 0) {
+                hasContent = true;
+                const contribSection = document.createElement('div');
+                contribSection.style.marginTop = '20px';
+                contribSection.innerHTML = '<strong style="display: block; margin-bottom: 10px;">Feature Impact Analysis:</strong>';
+                
+                explanation.feature_contributions.slice(0, 5).forEach(contrib => {
+                    const div = document.createElement('div');
+                    div.className = 'feature-item';
+                    const impactPct = (contrib.importance_pct || 0).toFixed(1);
+                    const displayName = contrib.display_name || contrib.feature;
+                    div.innerHTML = `
+                        <div class="feature-name">
+                            ${displayName}
+                            <span class="feature-importance">${impactPct}%</span>
+                        </div>
+                        <div class="feature-explanation">
+                            <strong>${contrib.direction}</strong> prediction 
+                            (impact: $${contrib.impact.toFixed(2)}/hour)
+                        </div>
+                    `;
+                    contribSection.appendChild(div);
+                });
+                
+                container.appendChild(contribSection);
+            }
+            
+            // Display model agreement metrics
+            if (explanation.model_agreements && explanation.model_agreements.num_models) {
+                hasContent = true;
+                const agreementSection = document.createElement('div');
+                agreementSection.style.marginTop = '20px';
+                agreementSection.innerHTML = '<strong style="display: block; margin-bottom: 10px;">Model Consensus:</strong>';
+                
+                const score = (explanation.model_agreements.agreement_score * 100).toFixed(0);
+                const agreementDiv = document.createElement('div');
+                agreementDiv.className = score >= 75 ? 'confidence-insight' : 'confidence-insight warning';
+                agreementDiv.innerHTML = `
+                    <p>
+                        <strong>${score}% agreement</strong> among ${explanation.model_agreements.num_models} models
+                        (std dev: $${explanation.model_agreements.std_prediction.toFixed(2)}/hour)
+                    </p>
+                `;
+                agreementSection.appendChild(agreementDiv);
+                
+                container.appendChild(agreementSection);
+            }
+            
+            // Display SHAP values if available
+            if (explanation.shap_values && explanation.shap_values.available && explanation.shap_values.top_features) {
+                hasContent = true;
+                const shapSection = document.createElement('div');
+                shapSection.style.marginTop = '20px';
+                shapSection.innerHTML = '<strong style="display: block; margin-bottom: 10px;">SHAP Analysis (Model Explainability):</strong>';
+                
+                explanation.shap_values.top_features.slice(0, 5).forEach(feat => {
+                    const div = document.createElement('div');
+                    div.className = 'feature-item';
+                    const displayName = feat.display_name || feat.feature;
+                    div.innerHTML = `
+                        <div class="feature-name">
+                            ${displayName}
+                            <span class="feature-importance">${feat.importance.toFixed(3)}</span>
+                        </div>
+                        <div class="feature-explanation">
+                            Current value: ${typeof feat.value === 'number' ? feat.value.toFixed(2) : feat.value}
+                        </div>
+                    `;
+                    shapSection.appendChild(div);
+                });
+                
+                container.appendChild(shapSection);
+            }
+            
+            // Show the card only if there's content
+            if (hasContent) {
+                card.style.display = 'block';
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = '❌ Error: ' + message;
+            errorDiv.classList.add('show');
+        }
+        
+        // Initialize form when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeForm);
+        } else {
+            initializeForm();
+        }
+    </script>
+</body>
+</html>

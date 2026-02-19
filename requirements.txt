@@ -11,5 +11,7 @@ sqlalchemy-mate<2.0
 SQLAlchemy<2.0
 census>=0.8.17
 catboost>=1.2
-lightgbm>=4.0flask>=2.0
+lightgbm>=4.0
+flask>=2.0
 shap>=0.41
+gunicorn>=21.2

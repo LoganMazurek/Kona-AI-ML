@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kona AI - Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        header h1 {
+            font-size: 24px;
+        }
+        
+        .header-right {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .user-info {
+            font-size: 14px;
+        }
+        
+        .logout-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            text-decoration: none;
+        }
+
+        .nav-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            text-decoration: none;
+        }
+
+        .nav-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .logout-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .welcome-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        
+        .welcome-section h2 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .welcome-section p {
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .action-card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .action-card.disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            position: relative;
+            pointer-events: none;
+        }
+
+        .action-card.disabled::after {
+            content: "Coming Soon";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-12deg);
+            background-color: rgba(102, 126, 234, 0.15);
+            border: 1px solid rgba(102, 126, 234, 0.35);
+            color: #42526e;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        .action-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        
+        .action-card a {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        
+        .action-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .action-card h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .action-card p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .model-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        
+        .model-section h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        
+        .model-list {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .model-item {
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.3s;
+        }
+        
+        .model-item.default {
+            border-color: #667eea;
+            background-color: #f0f4ff;
+        }
+        
+        .model-item:hover {
+            border-color: #667eea;
+        }
+
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+
+        .tag-positive {
+            background-color: #e7f6ee;
+            color: #1b7a45;
+            border-color: #bfe6cf;
+        }
+
+        .tag-neutral {
+            background-color: #eef1f7;
+            color: #42526e;
+            border-color: #d9e1f2;
+        }
+
+        .tag-caution {
+            background-color: #fff3e0;
+            color: #9a4d00;
+            border-color: #ffd7a8;
+        }
+        
+        .model-info h4 {
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 15px;
+        }
+        
+        .model-details {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .model-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .model-form {
+            display: inline;
+        }
+        
+        .select-model-btn {
+            padding: 8px 16px;
+            background-color: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background-color 0.3s;
+        }
+        
+        .select-model-btn:hover {
+            background-color: #5568d3;
+        }
+        
+        .select-model-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .default-badge {
+            display: inline-block;
+            background-color: #667eea;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .recent-predictions {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        
+        .recent-predictions h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        
+        .predictions-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        .predictions-table th {
+            background-color: #f0f4ff;
+            padding: 12px;
+            text-align: left;
+            color: #333;
+            font-weight: 600;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .predictions-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .predictions-table tr:hover {
+            background-color: #f9fafb;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🐧 Kona AI Dashboard</h1>
+        <div class="header-right">
+            <div class="user-info">
+                <strong>{{ franchise_name }}</strong>
+            </div>
+            <a href="{{ url_for('home') }}" class="nav-btn">Single Event</a>
+            <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+        </div>
+    </header>
+    
+    <div class="container">
+        <!-- Welcome Section -->
+        <div class="welcome-section">
+            <h2>Welcome, {{ franchise_name }}!</h2>
+            <p>Manage your event revenue predictions and select your preferred forecasting model.</p>
+            <div style="margin-top: 15px;">
+                <form method="POST" action="{{ url_for('update_target') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <label for="target_net_sales_per_hour" style="font-weight: 600;">Target Net Sales per Hour:</label>
+                    <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        id="target_net_sales_per_hour"
+                        name="target_net_sales_per_hour"
+                        value="{{ target_net_sales_per_hour or '' }}"
+                        placeholder="e.g., 250"
+                        style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; width: 140px;"
+                    />
+                    <button type="submit" class="select-model-btn">Save Target</button>
+                    {% if target_net_sales_per_hour %}
+                        <span style="color: #666; font-size: 14px;">Current: ${{ target_net_sales_per_hour }}/hour</span>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="actions-grid">
+            <div class="action-card">
+                <a href="{{ url_for('home') }}">
+                    <div class="action-icon">✨</div>
+                    <h3>Check Single Event</h3>
+                    <p>Get prediction for one event</p>
+                </a>
+            </div>
+            
+            <div class="action-card disabled" aria-disabled="true">
+                <a href="#" tabindex="-1" aria-hidden="true">
+                    <div class="action-icon">📤</div>
+                    <h3>Batch Upload</h3>
+                    <p>Upload CSV and predict multiple events</p>
+                </a>
+            </div>
+        </div>
+        
+        <!-- Model Selection Section -->
+        <div class="model-section">
+            <h3>📊 Available Models</h3>
+            <div class="model-list">
+                {% if models %}
+                    {% for model in models %}
+                    <div class="model-item {% if model.model_id == default_model.model_id %}default{% endif %}">
+                        <div class="model-info">
+                            <h4>{{ model.model_name }}</h4>
+                            <div class="model-details">
+                                <strong>Type:</strong> {{ model.model_type or 'Unknown' }} | 
+                                <strong>Accuracy:</strong> ±${% if model.cv_mae is not none %}{{ model.cv_mae|round(2) }}{% else %}N/A{% endif %}/hr | 
+                                <strong>Features:</strong> {{ model.feature_count or 'N/A' }} | 
+                                <strong>Trained:</strong> {% if model.training_date %}{{ model.training_date|mdy_date }}{% else %}N/A{% endif %}
+                                {% if model.model_id == default_model.model_id %}
+                                <span class="default-badge">✓ Current</span>
+                                {% endif %}
+                                <div class="tag-list">
+                                    {% if model.model_type == 'ensemble' %}
+                                        <span class="tag tag-positive">Balanced performance</span>
+                                        <span class="tag tag-neutral">Lower variance</span>
+                                    {% elif model.model_type == 'individual' %}
+                                        <span class="tag tag-positive">Faster predictions</span>
+                                        <span class="tag tag-caution">More variance</span>
+                                    {% elif model.model_type == 'franchise_specific' %}
+                                        <span class="tag tag-positive">Tailored to your data</span>
+                                        <span class="tag tag-caution">Less generalizable</span>
+                                    {% else %}
+                                        <span class="tag tag-neutral">Standard baseline</span>
+                                    {% endif %}
+                                    {% if model.cv_mae is not none %}
+                                        {% if model.cv_mae <= 200 %}
+                                            <span class="tag tag-positive">Tight error band</span>
+                                        {% elif model.cv_mae <= 350 %}
+                                            <span class="tag tag-neutral">Moderate error band</span>
+                                        {% else %}
+                                            <span class="tag tag-caution">Wide error band</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="model-actions">
+                            {% if model.model_id != default_model.model_id %}
+                            <form method="POST" action="{{ url_for('select_model') }}" class="model-form">
+                                <input type="hidden" name="model_id" value="{{ model.model_id }}">
+                                <button type="submit" class="select-model-btn">Select Model</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>No models available for your franchise</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Recent Predictions Section -->
+        {% if recent_predictions %}
+        <div class="recent-predictions">
+            <h3>📈 Recent Predictions</h3>
+            <table class="predictions-table">
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Predicted Revenue/Hour</th>
+                        <th>Total Revenue</th>
+                        <th>Confidence Range</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pred in recent_predictions %}
+                    <tr>
+                        <td>{{ pred.event_name or 'Event ' ~ pred.prediction_id[:8] }}</td>
+                        <td>${{ pred.predicted_revenue_per_hour|round(2) }}</td>
+                        <td>${{ pred.predicted_total_revenue|round(2) }}</td>
+                        <td>${{ pred.confidence_lower|round(2) }} - ${{ pred.confidence_upper|round(2) }}</td>
+                        <td>{{ pred.created_timestamp|mdy_date }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
