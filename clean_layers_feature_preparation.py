@@ -45,7 +45,8 @@ def prepare_features_for_clean_layers_model(
     franchise_id,
     demographics_dict,
     weather_dict,
-    franchise_history=None
+    franchise_history=None,
+    return_raw_values=False
 ):
     """
     Prepare exactly 46 features for clean_layers production model.
@@ -211,6 +212,14 @@ def prepare_features_for_clean_layers_model(
         'Equipment_Industry', 'Equipment_Season'  # Interaction features (also categorical)
     ]
     numeric_columns = [col for col in df.columns if col not in categorical_columns]
+
+    raw_categorical_values = {}
+    for col in categorical_columns:
+        if col in df.columns:
+            raw_value = features.get(col)
+            if col == 'School_Season':
+                raw_value = 'In session' if int(raw_value or 0) == 1 else 'Out of session'
+            raw_categorical_values[col] = raw_value
     
     # Step 1: Fill NaN values BEFORE encoding
     # For categorical: use 'unknown'
@@ -223,18 +232,40 @@ def prepare_features_for_clean_layers_model(
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     
-    # Step 2: Label encode categorical columns (converts to int64)
+    # Step 2: Map categorical columns using fixed mapping(converts to int64)
     # CatBoost requires integers for categorical features
-    label_encoders = {}
+    # Load categorical mappings from file
+    mappings_path = os.path.join(
+        os.path.dirname(__file__),
+        'production', 'models', 'categorical_mappings.json'
+    )
+    try:
+        with open(mappings_path) as f:
+            categorical_mappings = json.load(f)['mappings']
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Categorical mappings file not found: {mappings_path}")
+    
+    # Apply fixed mappings to categorical columns
     for col in categorical_columns:
         if col in df.columns:
-            # Create a label encoder
-            le = LabelEncoder()
-            # Fit and transform, then explicitly convert to int64
-            encoded = le.fit_transform(df[col].astype(str))
-            df[col] = pd.Series(encoded, index=df.index, dtype='int64')
-            # Store encoder for potential future use
-            label_encoders[col] = le
+            if col in categorical_mappings:
+                # Used fixed mapping
+                col_str = df[col].astype(str)
+                df[col] = col_str.map(categorical_mappings[col])
+                # Handle unmapped values by assigning to unknown category if it exists
+                if df[col].isna().any():
+                    unknown_value = categorical_mappings[col].get('unknown', 0)
+                    if unknown_value is not None:
+                        df[col] = df[col].fillna(unknown_value)
+                    else:
+                        # If no unknown category, fill with -1
+                        df[col] = df[col].fillna(-1).astype('int64')
+                df[col] = df[col].astype('int64')
+            else:
+                # For interactive features, use labelencoder as fallback
+                le = LabelEncoder()
+                encoded = le.fit_transform(df[col].astype(str))
+                df[col] = pd.Series(encoded, index=df.index, dtype='int64')
     
     # Step 3: Final validation - ensure all columns have proper dtypes
     # Categorical columns must be integer or object (string), not float
@@ -254,8 +285,10 @@ def prepare_features_for_clean_layers_model(
     
     print(f"✓ Prepared {len(df.columns)} features for clean_layers model")
     print(f"  Columns: {list(df.columns)[:5]}... (showing first 5)")
-    print(f"  Encoded {len(label_encoders)} categorical columns: {list(label_encoders.keys())}")
+    print(f"  Encoded {len(categorical_columns)} categorical columns using fixed mappings")
     
+    if return_raw_values:
+        return df, raw_categorical_values
     return df
 
 
@@ -350,11 +383,12 @@ if __name__ == '__main__':
         'feels_like_temp_f': 76.0,
     }
     
-    df = prepare_features_for_clean_layers_model(
+    df, raw_values = prepare_features_for_clean_layers_model(
         test_form_data,
         franchise_id=1,
         demographics_dict=test_demographics,
-        weather_dict=test_weather
+        weather_dict=test_weather,
+        return_raw_values=True
     )
     
     print(f"\nResult DataFrame:\n{df.T}")

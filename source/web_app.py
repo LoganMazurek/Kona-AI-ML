@@ -764,7 +764,7 @@ def calculate_confidence_interval(prediction, mae, std):
     }
 
 
-def get_feature_contributions(feature_df, demographics, weather_info, form_data):
+def get_feature_contributions(feature_df, demographics, weather_info, form_data, raw_feature_values=None):
     """
     Calculate and explain the top feature contributions to the prediction.
     Returns a list of feature explanations sorted by importance.
@@ -797,7 +797,10 @@ def get_feature_contributions(feature_df, demographics, weather_info, form_data)
         if feature_name not in feature_df.columns:
             continue
             
-        feature_value = feature_df[feature_name].iloc[0]
+        if raw_feature_values and feature_name in raw_feature_values:
+            feature_value = raw_feature_values[feature_name]
+        else:
+            feature_value = feature_df[feature_name].iloc[0]
         
         # Convert to JSON-serializable type
         if hasattr(feature_value, 'item'):  # NumPy types
@@ -1691,12 +1694,13 @@ def predict():
                                             user_temperature=form_data.get('temperature'))
         
         # Prepare exactly 46 features for clean_layers model
-        feature_df = prepare_features_for_clean_layers_model(
+        feature_df, raw_feature_values = prepare_features_for_clean_layers_model(
             form_data=form_data,
             franchise_id=franchise_id,
             demographics_dict=demographics,
             weather_dict=weather_info,
-            franchise_history=None  # TODO: Load from database if available
+            franchise_history=None,  # TODO: Load from database if available
+            return_raw_values=True
         )
         
         if feature_df is None or feature_df.empty:
@@ -1727,7 +1731,8 @@ def predict():
             feature_df,
             demographics,
             weather_info,
-            form_data
+            form_data,
+            raw_feature_values=raw_feature_values
         )
 
         advanced_explanation = None
@@ -1759,12 +1764,18 @@ def predict():
         if advanced_explanation:
             adv_contribs = advanced_explanation.get('feature_contributions', [])
             for contrib in adv_contribs:
-                contrib['display_name'] = humanize_feature_name(contrib.get('feature', ''))
+                feature_name = contrib.get('feature', '')
+                contrib['display_name'] = humanize_feature_name(feature_name)
+                if raw_feature_values and feature_name in raw_feature_values:
+                    contrib['value'] = raw_feature_values[feature_name]
 
             shap_values = advanced_explanation.get('shap_values', {})
             shap_features = shap_values.get('top_features', []) if isinstance(shap_values, dict) else []
             for feat in shap_features:
-                feat['display_name'] = humanize_feature_name(feat.get('feature', ''))
+                feature_name = feat.get('feature', '')
+                feat['display_name'] = humanize_feature_name(feature_name)
+                if raw_feature_values and feature_name in raw_feature_values:
+                    feat['value'] = raw_feature_values[feature_name]
         
         confidence_explanations = generate_confidence_explanation(
             confidence_pct, float(cv_mae or 312.66), total_net_sales, feature_contributions
