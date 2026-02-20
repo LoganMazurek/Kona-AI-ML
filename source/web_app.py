@@ -62,11 +62,13 @@ except ImportError:
 try:
     from uszipcode import SearchEngine
     USZIPCODE_AVAILABLE = True
-    _zip_search_engine = SearchEngine()
 except ImportError:
     USZIPCODE_AVAILABLE = False
-    _zip_search_engine = None
+    SearchEngine = None
     print("Warning: uszipcode package not available. Install with: pip install uszipcode")
+
+ENABLE_USZIPCODE = os.environ.get("ENABLE_USZIPCODE", "true").lower() == "true"
+_zip_search_engine = None
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -208,23 +210,42 @@ if cv_mae is not None and cv_std is not None:
 else:
     print("CV metrics not available; using conformal intervals if supported.")
 
-# Initialize advanced prediction explainer for better model interpretability
+# Initialize advanced prediction explainer lazily to reduce baseline RAM usage
+ENABLE_PREDICTION_EXPLAINER = os.environ.get("ENABLE_PREDICTION_EXPLAINER", "true").lower() == "true"
 PREDICTION_EXPLAINER = None
-if PredictionExplainer is not None:
-    try:
-        print("Initializing advanced prediction explainer...")
-        # Note: clean_layers model generates features at runtime, no static background data needed
-        PREDICTION_EXPLAINER = PredictionExplainer(
-            model, 
-            X_background=None,
-            use_shap=True
-        )
-        print("[OK] Prediction explainer initialized successfully")
-    except Exception as e:
-        print(f"[WARN] Could not initialize prediction explainer: {e}")
-        PREDICTION_EXPLAINER = None
-else:
-    print("[INFO] Advanced explanation system not available")
+
+
+def _get_zip_search_engine():
+    global _zip_search_engine
+    if not ENABLE_USZIPCODE or not USZIPCODE_AVAILABLE:
+        return None
+    if _zip_search_engine is None:
+        try:
+            _zip_search_engine = SearchEngine()
+        except Exception as e:
+            print(f"Warning: uszipcode SearchEngine init failed: {e}")
+            _zip_search_engine = None
+    return _zip_search_engine
+
+
+def get_prediction_explainer():
+    global PREDICTION_EXPLAINER
+    if not ENABLE_PREDICTION_EXPLAINER or PredictionExplainer is None:
+        return None
+    if PREDICTION_EXPLAINER is None:
+        try:
+            print("Initializing advanced prediction explainer...")
+            # Note: clean_layers model generates features at runtime, no static background data needed
+            PREDICTION_EXPLAINER = PredictionExplainer(
+                model,
+                X_background=None,
+                use_shap=True
+            )
+            print("[OK] Prediction explainer initialized successfully")
+        except Exception as e:
+            print(f"[WARN] Could not initialize prediction explainer: {e}")
+            PREDICTION_EXPLAINER = None
+    return PREDICTION_EXPLAINER
 
 # With clean_layers architecture, features are generated at runtime
 # No need to load template or historical data for prediction
@@ -672,9 +693,10 @@ def get_approximate_coordinates(zip_code):
         Tuple of (latitude, longitude)
     """
     # Try uszipcode first
-    if USZIPCODE_AVAILABLE and _zip_search_engine:
+    zip_engine = _get_zip_search_engine()
+    if zip_engine:
         try:
-            zipcode_obj = _zip_search_engine.by_zipcode(str(zip_code))
+            zipcode_obj = zip_engine.by_zipcode(str(zip_code))
             if zipcode_obj and zipcode_obj.lat and zipcode_obj.lng:
                 print(f"Found coordinates for ZIP {zip_code}: {zipcode_obj.lat}, {zipcode_obj.lng}")
                 return float(zipcode_obj.lat), float(zipcode_obj.lng)
@@ -1308,7 +1330,11 @@ def prepare_features_v2(form_data):
         df['Industry Category'] = df['Industry'].map(industry_categories).fillna('Other')
         
         # ZIP Cluster (first 3 digits)
-        df['ZIP Cluster'] = df['Zip Code'].astype(str).str[:3].astype(int)
+        zip_cluster = predict_zip_cluster(df['Zip Code'].iloc[0])
+        try:
+            df['ZIP Cluster'] = int(zip_cluster)
+        except (TypeError, ValueError):
+            df['ZIP Cluster'] = 0
         
         # Events in County (placeholder for single event)
         df['Events in County'] = 1
@@ -1784,9 +1810,10 @@ def predict():
         )
 
         advanced_explanation = None
-        if PREDICTION_EXPLAINER is not None:
+        prediction_explainer = get_prediction_explainer()
+        if prediction_explainer is not None:
             try:
-                advanced_explanation = PREDICTION_EXPLAINER.explain_prediction(
+                advanced_explanation = prediction_explainer.explain_prediction(
                     feature_df,
                     y_hat,
                     top_k=10
