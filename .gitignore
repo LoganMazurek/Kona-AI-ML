@@ -1,0 +1,48 @@
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Runtime / server artifacts (droplet) ---
+*.log
+*.pid
+*.pid.lock
+*.db
+*.sqlite
+*.sqlite3
+
+# --- ML / experiment artifacts ---
+mlruns/
+wandb/
+tensorboard/
+checkpoints/
+artifacts/
+models/
+logs/
+
+# --- Temp files ---
+tmp/
+temp/
+*.tmp
