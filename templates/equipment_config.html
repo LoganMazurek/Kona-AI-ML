@@ -172,6 +172,75 @@
             margin-bottom: 20px;
             display: none;
         }
+
+        .app-footer {
+            margin: 30px auto 20px;
+            text-align: center;
+            color: #667085;
+            font-size: 13px;
+        }
+
+        .credits-link {
+            background: none;
+            border: none;
+            color: #2563eb;
+            text-decoration: underline;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .credits-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .credits-modal-content {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            max-width: 700px;
+            width: 92%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .credits-modal h3 {
+            color: #333;
+            margin-top: 0;
+        }
+
+        .credits-modal p,
+        .credits-modal li {
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .credits-modal h5 {
+            color: #2563eb;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .credits-close {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -262,6 +331,63 @@
         </div>
     </div>
 
+    <footer class="app-footer">
+        <button class="credits-link" type="button" onclick="openCredits()">Credits &amp; attributions</button>
+    </footer>
+
+    <div id="creditsModal" class="credits-modal" role="dialog" aria-modal="true" aria-labelledby="creditsTitle">
+        <div class="credits-modal-content">
+            <h3 id="creditsTitle">Credits &amp; Attribution</h3>
+            <p>This app relies on the following open-source libraries and public data services:</p>
+
+            <h5>Machine Learning &amp; Analytics</h5>
+            <ul>
+                <li><strong>pandas</strong> - Data analysis toolkit (BSD 3-Clause License)</li>
+                <li><strong>NumPy</strong> - Numerical computing (BSD 3-Clause License)</li>
+                <li><strong>scikit-learn</strong> - ML utilities (BSD 3-Clause License)</li>
+                <li><strong>XGBoost</strong> - Gradient boosting (Apache 2.0 License)</li>
+                <li><strong>CatBoost</strong> - Gradient boosting (Apache 2.0 License)</li>
+                <li><strong>LightGBM</strong> - Gradient boosting (MIT License)</li>
+                <li><strong>SHAP</strong> - Model explainability (MIT License)</li>
+                <li><strong>Optuna</strong> - Hyperparameter optimization (MIT License)</li>
+                <li><strong>Matplotlib</strong> - Visualization (Matplotlib License)</li>
+            </ul>
+
+            <h5>Backend &amp; Data Access</h5>
+            <ul>
+                <li><strong>Flask</strong> - Web framework (BSD 3-Clause License)</li>
+                <li><strong>SQLAlchemy</strong> - Database toolkit (MIT License)</li>
+                <li><strong>sqlalchemy-mate</strong> - SQLAlchemy helpers (MIT License)</li>
+                <li><strong>Requests</strong> - HTTP client (Apache 2.0 License)</li>
+                <li><strong>Gunicorn</strong> - WSGI server (MIT License)</li>
+                <li><strong>python-census</strong> - Census API client (MIT License)</li>
+                <li><strong>uszipcode</strong> - ZIP metadata (MIT License)</li>
+            </ul>
+
+            <h5>Data &amp; APIs</h5>
+            <ul>
+                <li><strong>U.S. Census Bureau API (ACS)</strong> - Demographics data</li>
+                <li><strong>U.S. Census Geocoder</strong> - ZIP-to-county lookup</li>
+                <li><strong>Open-Meteo Archive API</strong> - Historical weather data</li>
+            </ul>
+
+            <h5>Services</h5>
+            <ul>
+                <li><strong>Buy Me a Coffee</strong> - Support widget</li>
+            </ul>
+
+            <h5>Development &amp; Testing</h5>
+            <ul>
+                <li><strong>pytest</strong> - Testing framework (MIT License)</li>
+            </ul>
+
+            <h5>Special Thanks</h5>
+            <p>Built on the work of open-source maintainers and data providers who make this possible.</p>
+
+            <button class="credits-close" type="button" onclick="closeCredits()">Close</button>
+        </div>
+    </div>
+
     <script>
         // Simulated equipment storage (in production, this would use a backend API)
         let equipmentConfig = JSON.parse(localStorage.getItem('equipmentConfig') || '{}');
@@ -346,6 +472,35 @@
         // Auto-refresh list when franchise name changes
         document.getElementById('franchise-name').addEventListener('change', renderEquipmentList);
         document.getElementById('franchise-name').addEventListener('blur', renderEquipmentList);
+    </script>
+    <script>
+        const creditsModal = document.getElementById('creditsModal');
+
+        function openCredits() {
+            if (creditsModal) {
+                creditsModal.style.display = 'flex';
+            }
+        }
+
+        function closeCredits() {
+            if (creditsModal) {
+                creditsModal.style.display = 'none';
+            }
+        }
+
+        if (creditsModal) {
+            creditsModal.addEventListener('click', (event) => {
+                if (event.target === creditsModal) {
+                    closeCredits();
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeCredits();
+            }
+        });
     </script>
     <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="loganmazurek" data-color="#FFDD00" data-emoji="" data-font="Lato" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
 </body>
