@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kona AI - Dashboard</title>
+    <title>Kona ML - Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -433,7 +433,7 @@
 </head>
 <body>
     <header>
-        <h1>🐧 Kona AI Dashboard</h1>
+        <h1>🐧 Kona ML Dashboard</h1>
         <div class="header-right">
             <div class="user-info">
                 <strong>{{ franchise_name }}</strong>
@@ -447,7 +447,6 @@
         <!-- Welcome Section -->
         <div class="welcome-section">
             <h2>Welcome, {{ franchise_name }}!</h2>
-            <p>Manage your event revenue predictions and select your preferred forecasting model.</p>
             <div style="margin-top: 15px;">
                 <form method="POST" action="{{ url_for('update_target') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                     <label for="target_net_sales_per_hour" style="font-weight: 600;">Target Net Sales per Hour:</label>
@@ -490,7 +489,7 @@
         
         <!-- Model Selection Section -->
         <div class="model-section">
-            <h3>📊 Available Models</h3>
+            <h3>Available Models</h3>
             <div class="model-list">
                 {% if models %}
                     {% for model in models %}
@@ -552,7 +551,7 @@
         <!-- Recent Predictions Section -->
         {% if recent_predictions %}
         <div class="recent-predictions">
-            <h3>📈 Recent Predictions</h3>
+            <h3>Recent Predictions</h3>
             {% if has_test_predictions %}
             <div class="prediction-actions">
                 <label>
@@ -568,7 +567,7 @@
                         <th></th>
                         <th>Event</th>
                         <th>Predicted Revenue/Hour</th>
-                        <th>Total Revenue</th>
+                        <th>Predicted Total Revenue</th>
                         <th>Actual Net Sales</th>
                         <th>Confidence Range</th>
                         <th>Date</th>

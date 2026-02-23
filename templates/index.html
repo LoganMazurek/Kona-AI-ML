@@ -208,6 +208,62 @@
             margin: 20px 0;
             text-align: center;
         }
+
+        .results-loading-text {
+            margin-top: 15px;
+            color: #667eea;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .results-subtext {
+            text-align: center;
+            color: #666;
+            font-size: 1em;
+        }
+
+        .results-target {
+            text-align: center;
+            color: #355;
+            font-size: 1em;
+        }
+
+        .results-meta {
+            text-align: center;
+            color: #666;
+            margin-top: 10px;
+            font-size: 0.98em;
+        }
+
+        .results-callout {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 8px;
+        }
+
+        .results-callout-text {
+            color: #856404;
+            font-size: 0.95em;
+        }
+
+        .results-list {
+            line-height: 1.8;
+            color: #333;
+            font-size: 0.98em;
+        }
+
+        .results-source {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .results-section-intro {
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 0.98em;
+        }
         
         .confidence-bar {
             width: 100%;
@@ -382,7 +438,7 @@
     <div class="container">
         <div class="header">
             <h1>🎯 Event Revenue Predictor</h1>
-            <p>AI-Powered Net Sales Forecasting with CatBoost ML</p>
+            <p>AI-Powered Net Sales Forecasting</p>
         </div>
         
         <div class="form-container">
@@ -491,7 +547,7 @@
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p style="margin-top: 15px; color: #667eea; font-weight: 600;">Analyzing event data...</p>
+                <p class="results-loading-text">Analyzing event data...</p>
             </div>
             
             <div class="error-message" id="errorMessage"></div>
@@ -500,10 +556,10 @@
                 <div class="result-card prediction-card" id="predictionCard">
                     <h3>💵 Predicted Net Sales</h3>
                     <div class="prediction-value" id="totalSales">$0.00</div>
-                    <p style="text-align: center; color: #666; font-size: 1.1em;">
+                    <p class="results-subtext">
                         <span id="perHourRate">$0.00</span> per hour × <span id="durationDisplay">0</span> hours
                     </p>
-                    <p id="targetNetSales" style="text-align: center; color: #355; font-size: 0.95em; display: none;">
+                    <p id="targetNetSales" class="results-target" style="display: none;">
                         Target: $<span id="targetNetSalesValue">0.00</span>/hour
                     </p>
                 </div>
@@ -513,7 +569,7 @@
                     <div class="confidence-bar">
                         <div class="confidence-fill" id="confidenceFill">0%</div>
                     </div>
-                    <p style="text-align: center; color: #666; margin-top: 10px;">
+                    <p class="results-meta">
                         Based on model CV MAE: <span id="modelMae">$0.00</span>
                     </p>
                 </div>
@@ -534,8 +590,8 @@
                             <div class="value" id="upperBound">$0.00</div>
                         </div>
                     </div>
-                    <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 8px;">
-                        <p style="color: #856404; font-size: 0.95em;">
+                    <div class="results-callout">
+                        <p class="results-callout-text">
                             <strong>Per Hour Range:</strong> 
                             $<span id="perHourLower">0.00</span> - $<span id="perHourUpper">0.00</span>
                         </p>
@@ -544,7 +600,7 @@
                 
                 <div class="result-card">
                     <h3>ℹ️ Event Summary</h3>
-                    <div style="line-height: 1.8;">
+                    <div class="results-list">
                         <p><strong>Industry:</strong> <span id="summaryIndustry">-</span></p>
                         <p><strong>Location:</strong> <span id="summaryCity">-</span>, ZIP <span id="summaryZip">-</span></p>
                         <p><strong>Date & Time:</strong> <span id="summaryDateTime">-</span></p>
@@ -554,11 +610,11 @@
                 
                 <div class="result-card">
                     <h3>📊 ZIP Demographics (Census Data)</h3>
-                    <div style="line-height: 1.8;">
+                    <div class="results-list">
                         <p><strong>Median Income:</strong> <span id="demoIncome">-</span></p>
                         <p><strong>Population:</strong> <span id="demoPopulation">-</span></p>
                         <p><strong>Unemployment:</strong> <span id="demoUnemployment">-</span></p>
-                        <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                        <p class="results-source">
                             <em>Data source: <span id="demoSource">-</span></em>
                         </p>
                     </div>
@@ -567,7 +623,7 @@
                 <div class="result-card">
                     <h3>🎯 Key Prediction Factors</h3>
                     <div id="featureContributions" style="line-height: 1.6;">
-                        <p style="color: #666; margin-bottom: 15px;">Top factors influencing this prediction:</p>
+                        <p class="results-section-intro">Top factors influencing this prediction:</p>
                         <!-- Feature contributions will be populated by JavaScript -->
                     </div>
                 </div>
@@ -575,7 +631,7 @@
                 <div class="result-card">
                     <h3>🔍 Prediction Confidence Insights</h3>
                     <div id="confidenceExplanations" style="line-height: 1.6;">
-                        <p style="color: #666; margin-bottom: 15px;">Understanding the prediction reliability:</p>
+                        <p class="results-section-intro">Understanding the prediction reliability:</p>
                         <!-- Confidence explanations will be populated by JavaScript -->
                     </div>
                 </div>
@@ -696,7 +752,7 @@
             // Update feature contributions
             if (data.feature_contributions) {
                 const contributionsDiv = document.getElementById('featureContributions');
-                let contributionsHTML = '<p style="color: #666; margin-bottom: 15px;">Top factors influencing this prediction:</p>';
+                let contributionsHTML = '<p class="results-section-intro">Top factors influencing this prediction:</p>';
                 
                 data.feature_contributions.slice(0, 6).forEach(feature => {
                     const displayName = feature.display_name || feature.feature;
@@ -717,7 +773,7 @@
             // Update confidence explanations
             if (data.confidence_explanations) {
                 const explanationsDiv = document.getElementById('confidenceExplanations');
-                let explanationsHTML = '<p style="color: #666; margin-bottom: 15px;">Understanding the prediction reliability:</p>';
+                let explanationsHTML = '<p class="results-section-intro">Understanding the prediction reliability:</p>';
                 
                 data.confidence_explanations.forEach(explanation => {
                     let cssClass = 'confidence-insight';
@@ -740,7 +796,7 @@
             // Update feature contributions
             if (data.feature_contributions) {
                 const featureContainer = document.getElementById('featureContributions');
-                featureContainer.innerHTML = '<p style="color: #666; margin-bottom: 15px;">Top factors influencing this prediction:</p>';
+                featureContainer.innerHTML = '<p class="results-section-intro">Top factors influencing this prediction:</p>';
                 
                 // Show top 5 features for clarity
                 const topFeatures = data.feature_contributions.slice(0, 5);
@@ -764,7 +820,7 @@
             // Update confidence explanations
             if (data.confidence_explanations) {
                 const confidenceContainer = document.getElementById('confidenceExplanations');
-                confidenceContainer.innerHTML = '<p style="color: #666; margin-bottom: 15px;">Understanding the prediction reliability:</p>';
+                confidenceContainer.innerHTML = '<p class="results-section-intro">Understanding the prediction reliability:</p>';
                 
                 data.confidence_explanations.forEach(explanation => {
                     const insightDiv = document.createElement('div');
