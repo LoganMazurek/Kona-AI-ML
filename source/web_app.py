@@ -17,6 +17,7 @@ import uuid
 from catboost import Pool
 from weather_data import WeatherDataEnricher
 from joblib import load as joblib_load
+from urllib.parse import urlparse
 
 # Import EnsembleRegressor so joblib can unpickle it
 try:
@@ -1544,6 +1545,26 @@ def register_page():
 
     return response
 
+
+def is_safe_redirect_target(target: str) -> bool:
+    """
+    Validate that a redirect target is a relative URL without scheme or netloc.
+    This helps prevent open redirects to external sites.
+    """
+    if not target:
+        return False
+    # Normalize backslashes which some browsers treat as path separators
+    cleaned = target.replace('\\', '')
+    parsed = urlparse(cleaned)
+    # Disallow any scheme or network location (host)
+    if parsed.scheme or parsed.netloc:
+        return False
+    # Optionally, require the path to start with '/' to keep redirects within the app
+    if not parsed.path.startswith('/'):
+        return False
+    return True
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     """Display login page or process login request."""
@@ -1564,7 +1585,11 @@ def login_page():
         return render_template('login.html', error=error)
     
     # Create response and set session cookie
-    next_page = request.args.get('next', url_for('dashboard'))
+    raw_next = request.args.get('next')
+    if raw_next and is_safe_redirect_target(raw_next):
+        next_page = raw_next.replace('\\', '')
+    else:
+        next_page = url_for('dashboard')
     response = make_response(redirect(next_page))
     response.set_cookie(
         SessionManager.get_session_cookie_name(),
