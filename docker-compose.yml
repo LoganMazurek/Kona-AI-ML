@@ -1,4 +1,14 @@
 services:
+  router:
+    build: .
+    container_name: router
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+    environment:
+      FLASK_ENV: "production"
+    command: ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "2", "--timeout", "120", "--max-requests", "500", "--max-requests-jitter", "50", "wsgi_router:app"]
+
   kona-ml:
     build: .
     container_name: kona-ml
