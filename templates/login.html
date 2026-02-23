@@ -107,6 +107,30 @@
             transform: translateY(0);
         }
         
+        .custom-bmc-button {
+            position: fixed;
+            bottom: 15px;
+            right: 15px;
+            width: 50px;
+            height: 50px;
+            background: #FFDD00;
+            border: 2px solid #000000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            z-index: 9999;
+            font-size: 24px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .custom-bmc-button:hover {
+            transform: scale(1.1);
+        }
+        
     </style>
 </head>
 <body>
@@ -154,40 +178,6 @@
         </div>
         
     </div>
-    <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="loganmazurek" data-color="#FFDD00" data-emoji="" data-font="Lato" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
-    <script>
-        function styleBMCButton() {
-            const bmcButton = document.querySelector('.bmc-button');
-            if (bmcButton) {
-                // Apply styles directly with fixed dimensions
-                bmcButton.style.cssText = 'position: fixed !important; bottom: 20px !important; right: 20px !important; width: 50px !important; height: 60px !important; z-index: 9999 !important; margin: 0 !important; padding: 0 !important;';
-                // Also style children
-                const children = bmcButton.querySelectorAll('*');
-                children.forEach(child => {
-                    child.style.width = '50px';
-                    child.style.height = '60px';
-                });
-                return true;
-            }
-            return false;
-        }
-        
-        // Try styling immediately and then with delays
-        if (styleBMCButton()) return;
-        
-        // Use MutationObserver to watch for button being added
-        const observer = new MutationObserver(function() {
-            if (styleBMCButton()) {
-                observer.disconnect();
-            }
-        });
-        
-        observer.observe(document.body, { childList: true, subtree: true });
-        
-        // Also try with timeouts
-        setTimeout(() => styleBMCButton(), 300);
-        setTimeout(() => styleBMCButton(), 800);
-        setTimeout(() => styleBMCButton(), 1500);
-    </script>
+    <a href="https://www.buymeacoffee.com/loganmazurek" target="_blank" class="custom-bmc-button" title="Buy me a coffee">☕</a>
 </body>
 </html>
