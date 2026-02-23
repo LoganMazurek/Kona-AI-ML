@@ -83,6 +83,29 @@
             font-size: 48px;
             margin-bottom: 15px;
         }
+        .custom-bmc-button {
+            position: fixed;
+            bottom: 15px;
+            right: 15px;
+            width: 50px;
+            height: 50px;
+            background: #FFDD00;
+            border: 2px solid #000000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            z-index: 9999;
+            font-size: 24px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .custom-bmc-button:hover {
+            transform: scale(1.1);
+        }
         
         @media (max-width: 600px) {
             .services-grid {
@@ -121,5 +144,6 @@
             </a>
         </div>
     </div>
+    <a href="https://www.buymeacoffee.com/loganmazurek" target="_blank" class="custom-bmc-button" title="Buy me a coffee">☕</a>
 </body>
 </html>
