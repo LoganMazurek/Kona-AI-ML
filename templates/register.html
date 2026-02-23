@@ -129,21 +129,6 @@
         .login-link a:hover {
             text-decoration: underline;
         }
-        
-        .bmc-button,
-        .bmc-button * {
-            position: fixed !important;
-            bottom: 20px !important;
-            right: 20px !important;
-        }
-        
-        .bmc-button {
-            transform: scale(0.5) !important;
-            transform-origin: bottom right !important;
-            z-index: 999 !important;
-            width: auto !important;
-            height: auto !important;
-        }
     </style>
 </head>
 <body>
@@ -227,5 +212,22 @@
         </div>
     </div>
     <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="loganmazurek" data-color="#FFDD00" data-emoji="" data-font="Lato" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+    <script>
+        // Wait for BMC button to load, then style it
+        setTimeout(function() {
+            const bmcButton = document.querySelector('.bmc-button');
+            if (bmcButton) {
+                // Make it small and position it
+                bmcButton.style.position = 'fixed';
+                bmcButton.style.bottom = '20px';
+                bmcButton.style.right = '20px';
+                bmcButton.style.zIndex = '9999';
+                bmcButton.style.width = 'auto';
+                bmcButton.style.height = 'auto';
+                bmcButton.style.transform = 'scale(0.4)';
+                bmcButton.style.transformOrigin = 'bottom right';
+            }
+        }, 500);
+    </script>
 </body>
 </html>
