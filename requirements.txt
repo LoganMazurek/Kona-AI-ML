@@ -7,7 +7,7 @@ matplotlib>=3.7
 pytest>=7.0
 requests>=2.31.0
 uszipcode==1.0.1
-sqlalchemy-mate<2.0
+sqlalchemy-mate<3.0
 SQLAlchemy<2.0
 census>=0.8.17
 catboost>=1.2
