@@ -1965,7 +1965,8 @@ if __name__ == '__main__':
             print(f"CV MAE: {float(cv_mae):.2f} ± {float(cv_std):.2f}")
         except Exception:
             pass
-    print(f"Starting server on http://127.0.0.1:5000")
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    print(f"Starting server on http://127.0.0.1:5000 (debug={debug_mode})")
     print("="*80)
     
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=debug_mode, host='127.0.0.1', port=5000)
