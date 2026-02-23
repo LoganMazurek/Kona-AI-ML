@@ -89,6 +89,31 @@
             color: #666;
             margin-top: 5px;
         }
+
+        .router-link {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: #ffffff;
+            border: 1px solid #d5dbe6;
+            color: #334155;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-size: 18px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+            transition: transform 0.2s, border-color 0.2s;
+            z-index: 9999;
+        }
+
+        .router-link:hover {
+            border-color: #b6c0d6;
+            transform: translateY(-1px);
+        }
         button {
             background: #0066cc;
             color: white;
@@ -150,6 +175,7 @@
     </style>
 </head>
 <body>
+    <a href="https://loganmazurek.com" class="router-link" title="Back to main router">🚪</a>
     <div class="container">
         <h1>🍧 Equipment Configuration</h1>
         <p class="subtitle">Configure your franchise's equipment to track smoothie capability</p>

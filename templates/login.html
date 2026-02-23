@@ -130,10 +130,36 @@
         .custom-bmc-button:hover {
             transform: scale(1.1);
         }
+
+        .router-link {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-size: 18px;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s, background-color 0.2s;
+            z-index: 9999;
+        }
+
+        .router-link:hover {
+            background: rgba(255, 255, 255, 0.35);
+            transform: translateY(-1px);
+        }
         
     </style>
 </head>
 <body>
+    <a href="https://loganmazurek.com" class="router-link" title="Back to main router">🚪</a>
     <div class="login-container">
         <div class="login-header">
             <h1>🐧 Kona ML</h1>

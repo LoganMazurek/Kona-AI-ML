@@ -65,6 +65,18 @@
             text-decoration: none;
         }
 
+        .nav-icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            border-radius: 6px;
+            font-size: 18px;
+            line-height: 1;
+        }
+
         .nav-btn:hover {
             background-color: rgba(255, 255, 255, 0.3);
         }
@@ -438,6 +450,7 @@
             <div class="user-info">
                 <strong>{{ franchise_name }}</strong>
             </div>
+            <a href="https://loganmazurek.com" class="nav-btn nav-icon-btn" title="Back to main router">🚪</a>
             <a href="{{ url_for('home') }}" class="nav-btn">Single Event</a>
             <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
         </div>
