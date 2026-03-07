@@ -5,6 +5,7 @@ Provides an interactive form for inputting event details and returns predictions
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, make_response
 from functools import wraps
+from urllib.parse import urlparse, unquote
 import joblib
 import pandas as pd
 import numpy as np
@@ -167,6 +168,26 @@ def get_current_franchise():
 def get_current_franchise_id():
     """Get current franchise ID from request context."""
     return request.franchise_id
+
+def is_safe_redirect_target(target: str) -> bool:
+    """
+    Return True only if `target` is a safe redirect URL:
+      - A relative path starting with '/' and NOT starting with '//' (protocol-relative)
+      - OR an absolute URL whose scheme is http/https and whose host matches the current request host
+    Normalizes backslashes and URL-encoded characters to catch common bypass attempts.
+    """
+    if not target:
+        return False
+    # Decode URL-encoded characters (e.g. %5C -> \) then normalize backslashes
+    target = unquote(target).replace('\\', '/')
+    parsed = urlparse(target)
+    # Relative path: no scheme, no netloc, must start with /
+    if not parsed.scheme and not parsed.netloc:
+        return target.startswith('/') and not target.startswith('//')
+    # Absolute URL: scheme must be http/https and host must match current host
+    if parsed.scheme in ('http', 'https'):
+        return parsed.netloc == request.host
+    return False
 
 # ===== MODEL LOADING =====
 
@@ -1564,7 +1585,11 @@ def login_page():
         return render_template('login.html', error=error)
     
     # Create response and set session cookie
-    next_page = request.args.get('next', url_for('dashboard'))
+    next_page_raw = request.args.get('next')
+    if next_page_raw and is_safe_redirect_target(next_page_raw):
+        next_page = next_page_raw
+    else:
+        next_page = url_for('dashboard')
     response = make_response(redirect(next_page))
     response.set_cookie(
         SessionManager.get_session_cookie_name(),
