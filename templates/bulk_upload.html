@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kona ML - Batch Upload</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 24px;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .nav-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            text-decoration: none;
+        }
+
+        .nav-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .logout-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            text-decoration: none;
+        }
+
+        .logout-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .card h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: #444;
+        }
+
+        .card h3 {
+            font-size: 17px;
+            margin-bottom: 12px;
+            color: #555;
+        }
+
+        .template-link {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-bottom: 20px;
+            transition: opacity 0.2s;
+        }
+
+        .template-link:hover {
+            opacity: 0.9;
+        }
+
+        .column-guide {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .column-guide th,
+        .column-guide td {
+            border: 1px solid #e0e0e0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .column-guide th {
+            background: #f5f7fa;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .column-guide tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .optional-badge {
+            background: #e8f5e9;
+            color: #388e3c;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .required-badge {
+            background: #fce4ec;
+            color: #c62828;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .upload-form {
+            margin-top: 10px;
+        }
+
+        .file-input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fafafa;
+            font-size: 14px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .submit-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Results */
+        .results-summary {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .result-stat {
+            flex: 1;
+            min-width: 120px;
+            background: #f5f7fa;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .result-stat .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .result-stat .stat-label {
+            font-size: 13px;
+            color: #777;
+            margin-top: 4px;
+        }
+
+        .result-stat.stat-skipped .stat-value { color: #f59e0b; }
+        .result-stat.stat-outcomes .stat-value { color: #10b981; }
+        .result-stat.stat-errors .stat-value { color: #ef4444; }
+
+        .error-list {
+            background: #fff5f5;
+            border: 1px solid #fca5a5;
+            border-radius: 6px;
+            padding: 12px 16px;
+            font-size: 14px;
+        }
+
+        .error-list ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .error-list li {
+            color: #c62828;
+            margin-bottom: 4px;
+        }
+
+        /* History table */
+        .history-table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        .history-table th,
+        .history-table td {
+            border: 1px solid #e0e0e0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .history-table th {
+            background: #f5f7fa;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .history-table tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .no-history {
+            color: #999;
+            font-size: 14px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📤 Batch Upload</h1>
+        <div class="header-right">
+            <a href="{{ url_for('dashboard') }}" class="nav-btn">Dashboard</a>
+            <a href="{{ url_for('home') }}" class="nav-btn">Single Event</a>
+            <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+        </div>
+    </header>
+
+    <div class="container">
+
+        {% if results %}
+        <!-- Results Summary -->
+        <div class="card">
+            <h2>Upload Results</h2>
+            <div class="results-summary">
+                <div class="result-stat">
+                    <div class="stat-value">{{ results.added }}</div>
+                    <div class="stat-label">Events Added</div>
+                </div>
+                <div class="result-stat stat-outcomes">
+                    <div class="stat-value">{{ results.outcomes }}</div>
+                    <div class="stat-label">Outcomes Logged</div>
+                </div>
+                <div class="result-stat stat-skipped">
+                    <div class="stat-value">{{ results.skipped }}</div>
+                    <div class="stat-label">Duplicates Skipped</div>
+                </div>
+                <div class="result-stat stat-errors">
+                    <div class="stat-value">{{ results.errors | length }}</div>
+                    <div class="stat-label">Row Errors</div>
+                </div>
+            </div>
+
+            {% if results.errors %}
+            <div class="error-list">
+                <strong>Row-level errors:</strong>
+                <ul>
+                    {% for err in results.errors %}
+                    <li>{{ err }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Upload Form -->
+        <div class="card">
+            <h2>Upload Events Spreadsheet</h2>
+            <p style="font-size:14px; color:#666; margin-bottom:16px;">
+                Upload an <strong>.xlsx</strong> or <strong>.xls</strong> file containing multiple events.
+                Download the template below to get started with the correct format.
+            </p>
+            <a href="{{ url_for('bulk_upload_template') }}" class="template-link">⬇ Download Template</a>
+
+            <form class="upload-form" method="POST" enctype="multipart/form-data" action="{{ url_for('bulk_upload_page') }}">
+                <div class="file-input-wrapper">
+                    <input type="file" name="file" accept=".xlsx,.xls" required />
+                    <button type="submit" class="submit-btn">Upload &amp; Process</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Column Guide -->
+        <div class="card">
+            <h2>Expected Format</h2>
+            <table class="column-guide">
+                <thead>
+                    <tr>
+                        <th>Column</th>
+                        <th>Example</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Event Name <span class="optional-badge">optional</span></td>
+                        <td>Summer Festival</td>
+                        <td>Auto-generated if blank</td>
+                    </tr>
+                    <tr>
+                        <td>Industry <span class="required-badge">required</span></td>
+                        <td>Festival</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>Equipment Type <span class="required-badge">required</span></td>
+                        <td>Blended Truck</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>Event Date <span class="required-badge">required</span></td>
+                        <td>2025-08-15</td>
+                        <td>Format: YYYY-MM-DD</td>
+                    </tr>
+                    <tr>
+                        <td>Start Time <span class="required-badge">required</span></td>
+                        <td>10:00</td>
+                        <td>Format: HH:MM (24-hour)</td>
+                    </tr>
+                    <tr>
+                        <td>Duration (Hours) <span class="required-badge">required</span></td>
+                        <td>6</td>
+                        <td>Decimal hours, e.g. 4.5</td>
+                    </tr>
+                    <tr>
+                        <td>City <span class="required-badge">required</span></td>
+                        <td>Portland</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>ZIP Code <span class="required-badge">required</span></td>
+                        <td>97201</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>Temperature (°F) <span class="optional-badge">optional</span></td>
+                        <td>75</td>
+                        <td>Leave blank to omit</td>
+                    </tr>
+                    <tr>
+                        <td>Net Sales <span class="optional-badge">optional</span></td>
+                        <td>1850.00</td>
+                        <td>Fill for completed past events — outcome is auto-logged</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p style="font-size:13px; color:#888; margin-top:10px;">
+                <strong>Deduplication:</strong> Rows with the same Event Date + City + ZIP Code as an
+                existing event in your account are automatically skipped.
+            </p>
+        </div>
+
+        <!-- Upload History -->
+        <div class="card">
+            <h2>Recent Batch Upload History</h2>
+            {% if recent_uploads %}
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Events</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for upload in recent_uploads %}
+                    <tr>
+                        <td>{{ upload.original_filename }}</td>
+                        <td>{{ upload.event_count }}</td>
+                        <td>{{ upload.upload_timestamp }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-history">No batch uploads yet.</p>
+            {% endif %}
+        </div>
+
+    </div>
+</body>
+</html>

@@ -1951,6 +1951,271 @@ def get_industries():
     return jsonify({'industries': industries})
 
 
+# ===== BULK UPLOAD ROUTES =====
+
+BULK_UPLOAD_COLUMNS = [
+    'Event Name',
+    'Industry',
+    'Equipment Type',
+    'Event Date',
+    'Start Time',
+    'Duration (Hours)',
+    'City',
+    'ZIP Code',
+    'Temperature (°F)',
+    'Net Sales',
+]
+
+BULK_UPLOAD_EXAMPLE_ROW = [
+    'Summer Festival',
+    'Festival',
+    'Blended Truck',
+    '2025-08-15',
+    '10:00',
+    '6',
+    'Portland',
+    '97201',
+    '75',
+    '',
+]
+
+
+@app.route('/bulk-upload/template')
+@require_auth
+def bulk_upload_template():
+    """Return a downloadable Excel template for bulk event upload."""
+    import io
+    try:
+        import openpyxl
+    except ImportError:
+        return jsonify({'error': 'openpyxl is not installed on the server'}), 500
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Events'
+    ws.append(BULK_UPLOAD_COLUMNS)
+    ws.append(BULK_UPLOAD_EXAMPLE_ROW)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    response = make_response(buf.read())
+    response.headers['Content-Type'] = (
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response.headers['Content-Disposition'] = (
+        'attachment; filename="bulk_upload_template.xlsx"'
+    )
+    return response
+
+
+@app.route('/bulk-upload', methods=['GET', 'POST'])
+@require_auth
+def bulk_upload_page():
+    """Render and process the bulk event upload page."""
+    franchise_id = get_current_franchise_id()
+    recent_uploads = franchise_db.get_recent_batch_uploads(franchise_id, limit=10)
+
+    if request.method == 'GET':
+        return render_template('bulk_upload.html', recent_uploads=recent_uploads)
+
+    # --- POST: process the uploaded file ---
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': ['No file was uploaded.']},
+        )
+
+    filename = uploaded_file.filename.lower()
+    if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': ['Only .xlsx and .xls files are accepted.']},
+        )
+
+    try:
+        import io as _io
+        file_bytes = _io.BytesIO(uploaded_file.read())
+        df = pd.read_excel(file_bytes, engine='openpyxl', dtype=str)
+    except Exception as exc:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': [f'Could not read file: {exc}']},
+        )
+
+    required_cols = {'Event Date', 'Duration (Hours)', 'City', 'ZIP Code'}
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': [f'Missing required columns: {", ".join(sorted(missing_cols))}']},
+        )
+
+    # Ensure the bulk_dedup_key column exists (added once, idempotent via PRAGMA check)
+    import sqlite3 as _sqlite3
+    try:
+        conn = franchise_db.get_connection()
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(predictions)")
+        col_names = {row_info[1] for row_info in cur.fetchall()}
+        if 'bulk_dedup_key' not in col_names:
+            cur.execute("ALTER TABLE predictions ADD COLUMN bulk_dedup_key TEXT DEFAULT ''")
+            conn.commit()
+        conn.close()
+    except _sqlite3.OperationalError:
+        pass
+
+    # Build a deduplication set from existing predictions
+    existing_preds = franchise_db.get_recent_predictions(franchise_id, limit=5000)
+    existing_keys = set()
+    for pred in existing_preds:
+        name = pred.get('event_name', '')
+        # Extract date/city/zip from event_name if encoded, but we store as event_name
+        # Use a composite key stored during bulk upload: date|city|zip
+        dup_key = pred.get('bulk_dedup_key', '')
+        if dup_key:
+            existing_keys.add(dup_key)
+
+    added = 0
+    outcomes = 0
+    skipped = 0
+    errors = []
+    today = datetime.utcnow().date()
+
+    model_id = 'bulk_upload'
+
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2  # 1-based, header is row 1
+
+        event_name = str(row.get('Event Name', '') or '').strip()
+        industry = str(row.get('Industry', '') or '').strip()
+        equipment_type = str(row.get('Equipment Type', '') or '').strip()
+        event_date_str = str(row.get('Event Date', '') or '').strip()
+        start_time_str = str(row.get('Start Time', '') or '').strip()
+        duration_str = str(row.get('Duration (Hours)', '') or '').strip()
+        city = str(row.get('City', '') or '').strip()
+        zip_code = str(row.get('ZIP Code', '') or '').strip()
+        net_sales_str = str(row.get('Net Sales', '') or '').strip()
+
+        # Validate required fields
+        row_errors = []
+        if not event_date_str:
+            row_errors.append('Event Date is required')
+        if not city:
+            row_errors.append('City is required')
+        if not zip_code:
+            row_errors.append('ZIP Code is required')
+        if not duration_str:
+            row_errors.append('Duration (Hours) is required')
+
+        if row_errors:
+            errors.append(f'Row {row_num}: {"; ".join(row_errors)}')
+            continue
+
+        # Parse event date
+        try:
+            event_date = datetime.strptime(event_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append(f'Row {row_num}: Invalid Event Date format (expected YYYY-MM-DD)')
+            continue
+
+        # Parse duration
+        try:
+            duration_hours = float(duration_str)
+            if duration_hours <= 0:
+                raise ValueError('non-positive')
+        except ValueError:
+            errors.append(f'Row {row_num}: Invalid Duration (Hours) value')
+            continue
+
+        # Deduplication check
+        dedup_key = f'{event_date_str}|{city.lower()}|{zip_code}'
+        if dedup_key in existing_keys:
+            skipped += 1
+            continue
+
+        # Parse optional net sales
+        net_sales = None
+        if net_sales_str:
+            try:
+                net_sales = float(net_sales_str)
+                if net_sales < 0:
+                    net_sales = None
+            except ValueError:
+                pass
+
+        # Build event_name if blank
+        if not event_name:
+            event_name = f'{industry or "Event"} - {city} ({event_date_str})'
+
+        prediction_id = uuid.uuid4().hex
+
+        # For bulk uploads we store placeholder prediction values (0) since we
+        # don't run the ML model here — the focus is recording history.
+        franchise_db.record_prediction(
+            prediction_id=prediction_id,
+            franchise_id=franchise_id,
+            model_id=model_id,
+            event_name=event_name,
+            duration_hours=duration_hours,
+            predicted_revenue_per_hour=0.0,
+            predicted_total_revenue=0.0,
+            confidence_lower=0.0,
+            confidence_upper=0.0,
+            is_test=False,
+            actual_total_net_sales=None,
+        )
+
+        # Persist dedup key so future uploads can detect duplicates
+        try:
+            conn = franchise_db.get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE predictions SET bulk_dedup_key = ? WHERE prediction_id = ?",
+                (dedup_key, prediction_id),
+            )
+            conn.commit()
+            conn.close()
+        except _sqlite3.OperationalError as _db_err:
+            errors.append(f'Row {row_num}: Could not store dedup key: {_db_err}')
+
+        existing_keys.add(dedup_key)
+        added += 1
+
+        # If past event with positive net sales, log the outcome
+        if event_date < today and net_sales and net_sales > 0:
+            franchise_db.update_actual_net_sales(franchise_id, prediction_id, net_sales)
+            outcomes += 1
+
+    # Record the batch upload in history
+    batch_id = uuid.uuid4().hex
+    franchise_db.record_batch_upload(
+        batch_id=batch_id,
+        franchise_id=franchise_id,
+        model_id=model_id,
+        original_filename=uploaded_file.filename,
+        event_count=added,
+        result_csv_path='',
+    )
+
+    recent_uploads = franchise_db.get_recent_batch_uploads(franchise_id, limit=10)
+    return render_template(
+        'bulk_upload.html',
+        recent_uploads=recent_uploads,
+        results={'added': added, 'outcomes': outcomes, 'skipped': skipped, 'errors': errors},
+    )
+
+
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)
