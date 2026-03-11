@@ -240,6 +240,14 @@
             font-size: 1em;
         }
 
+        .results-status {
+            text-align: center;
+            margin-top: 10px;
+            color: #4a5568;
+            font-size: 0.95em;
+            font-weight: 600;
+        }
+
         .results-meta {
             text-align: center;
             color: #666;
@@ -620,6 +628,13 @@
                                 <span>Save this as a test entry so it can be deleted later.</span>
                             </div>
                         </div>
+                        <div class="form-group">
+                            <label for="is_booked">Event Booking Status</label>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="is_booked" name="is_booked" value="1">
+                                <span>This event is already booked. Leave unchecked to save as forecast only.</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -644,6 +659,7 @@
                     <p id="targetNetSales" class="results-target" style="display: none;">
                         Target: $<span id="targetNetSalesValue">0.00</span>/hour
                     </p>
+                    <p id="predictionStatus" class="results-status"></p>
                 </div>
                 
                 <div class="result-card">
@@ -858,6 +874,12 @@
             document.getElementById('totalSales').textContent = '$' + formatCurrency(data.total_net_sales);
             document.getElementById('perHourRate').textContent = '$' + formatCurrency(data.net_sales_per_hour);
             document.getElementById('durationDisplay').textContent = data.duration;
+            const statusText = data.event_status === 'booked_confirmed'
+                ? 'Saved as booked event.'
+                : data.event_status === 'completed'
+                    ? 'Saved as completed event.'
+                    : 'Saved as forecast only. It will not count as realized business until confirmed or completed.';
+            document.getElementById('predictionStatus').textContent = statusText;
             
             // Update confidence
             const confidencePct = Math.round(data.confidence_percentage);

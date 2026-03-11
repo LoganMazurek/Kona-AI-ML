@@ -365,6 +365,16 @@
                         <td></td>
                     </tr>
                     <tr>
+                        <td>Equipment Number <span class="optional-badge">optional</span></td>
+                        <td>TRK-12</td>
+                        <td>Recommended when multiple trucks can serve similar events</td>
+                    </tr>
+                    <tr>
+                        <td>Source Event ID <span class="optional-badge">optional</span></td>
+                        <td>sched-evt-2025-08-15-001</td>
+                        <td>Best dedup key when available from your scheduler/CRM</td>
+                    </tr>
+                    <tr>
                         <td>Event Date <span class="required-badge">required</span></td>
                         <td>2025-08-15</td>
                         <td>Format: YYYY-MM-DD</td>
@@ -402,8 +412,9 @@
                 </tbody>
             </table>
             <p style="font-size:13px; color:#888; margin-top:10px;">
-                <strong>Deduplication:</strong> Rows with the same Event Date + City + ZIP Code as an
-                existing event in your account are automatically skipped.
+                <strong>Deduplication:</strong> Exact duplicate rows in the same file are skipped.
+                Cross-upload dedup is only enforced when Source Event ID is provided, or when
+                Equipment Number is present with matching date/time/location.
             </p>
         </div>
 

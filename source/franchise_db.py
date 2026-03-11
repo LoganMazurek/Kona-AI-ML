@@ -124,6 +124,9 @@ class FranchiseDatabase:
         self._ensure_column_exists(cursor, 'predictions', 'actual_revenue_per_hour', 'REAL')
         self._ensure_column_exists(cursor, 'predictions', 'actual_updated_timestamp', 'TIMESTAMP')
         self._ensure_column_exists(cursor, 'predictions', 'is_test', 'BOOLEAN DEFAULT 0')
+        self._ensure_column_exists(cursor, 'predictions', 'event_status', "TEXT DEFAULT 'predicted_only'")
+        self._ensure_column_exists(cursor, 'predictions', 'include_in_training', 'BOOLEAN DEFAULT 0')
+        self._ensure_column_exists(cursor, 'predictions', 'scheduled_event_date', 'TEXT')
         
         conn.commit()
         conn.close()
@@ -408,7 +411,10 @@ class FranchiseDatabase:
                          predicted_revenue_per_hour: float,
                          predicted_total_revenue: float, confidence_lower: float,
                          confidence_upper: float, is_test: bool = False,
-                         actual_total_net_sales: Optional[float] = None) -> bool:
+                         actual_total_net_sales: Optional[float] = None,
+                         event_status: str = 'predicted_only',
+                         include_in_training: bool = False,
+                         scheduled_event_date: Optional[str] = None) -> bool:
         """Record a prediction for history tracking."""
         try:
             actual_per_hour = None
@@ -421,14 +427,16 @@ class FranchiseDatabase:
                 (prediction_id, franchise_id, model_id, event_name, duration_hours,
                  predicted_revenue_per_hour, predicted_total_revenue,
                  confidence_lower, confidence_upper, actual_total_net_sales,
-                 actual_revenue_per_hour, actual_updated_timestamp, is_test)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                     actual_revenue_per_hour, actual_updated_timestamp, is_test,
+                     event_status, include_in_training, scheduled_event_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END,
-                        ?)
+                        ?, ?, ?, ?)
             ''', (prediction_id, franchise_id, model_id, event_name, duration_hours,
                   predicted_revenue_per_hour, predicted_total_revenue,
                   confidence_lower, confidence_upper, actual_total_net_sales,
-                  actual_per_hour, actual_total_net_sales, int(is_test)))
+                    actual_per_hour, actual_total_net_sales, int(is_test),
+                    event_status, int(include_in_training), scheduled_event_date))
             conn.commit()
             conn.close()
             return True
@@ -448,6 +456,60 @@ class FranchiseDatabase:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    def get_prediction_dashboard_stats(self, franchise_id: str) -> Dict[str, float]:
+        """Return full-history lifecycle and realized performance stats for the dashboard."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT
+                COUNT(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'completed'
+                     AND actual_total_net_sales IS NOT NULL
+                    THEN 1 END) AS realized_count,
+                COALESCE(SUM(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'completed'
+                     AND actual_total_net_sales IS NOT NULL
+                    THEN actual_total_net_sales ELSE 0 END), 0) AS realized_total,
+                COUNT(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'predicted_only'
+                    THEN 1 END) AS forecast_count,
+                COUNT(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'booked_confirmed'
+                    THEN 1 END) AS booked_count,
+                COUNT(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'needs_outcome'
+                    THEN 1 END) AS needs_outcome_count
+            FROM predictions
+            WHERE franchise_id = ?
+            ''',
+            (franchise_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return {
+                'realized_count': 0,
+                'realized_total': 0.0,
+                'forecast_count': 0,
+                'booked_count': 0,
+                'needs_outcome_count': 0,
+            }
+
+        return {
+            'realized_count': int(row['realized_count'] or 0),
+            'realized_total': float(row['realized_total'] or 0.0),
+            'forecast_count': int(row['forecast_count'] or 0),
+            'booked_count': int(row['booked_count'] or 0),
+            'needs_outcome_count': int(row['needs_outcome_count'] or 0),
+        }
 
     def update_actual_net_sales(self, franchise_id: str, prediction_id: str,
                                 actual_total_net_sales: float) -> bool:
@@ -474,10 +536,42 @@ class FranchiseDatabase:
                 '''UPDATE predictions
                    SET actual_total_net_sales = ?,
                        actual_revenue_per_hour = ?,
-                       actual_updated_timestamp = datetime('now')
+                       actual_updated_timestamp = datetime('now'),
+                       event_status = 'completed',
+                       include_in_training = 1
                    WHERE franchise_id = ? AND prediction_id = ?''',
                 (actual_total_net_sales, actual_per_hour, franchise_id, prediction_id)
             )
+            conn.commit()
+            updated = cursor.rowcount > 0
+            conn.close()
+            return updated
+        except Exception:
+            return False
+
+    def update_prediction_status(self, franchise_id: str, prediction_id: str,
+                                 event_status: str,
+                                 include_in_training: Optional[bool] = None) -> bool:
+        """Update lifecycle status for a prediction."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            if include_in_training is None:
+                cursor.execute(
+                    '''UPDATE predictions
+                       SET event_status = ?
+                       WHERE franchise_id = ? AND prediction_id = ?''',
+                    (event_status, franchise_id, prediction_id)
+                )
+            else:
+                cursor.execute(
+                    '''UPDATE predictions
+                       SET event_status = ?, include_in_training = ?
+                       WHERE franchise_id = ? AND prediction_id = ?''',
+                    (event_status, int(include_in_training), franchise_id, prediction_id)
+                )
+
             conn.commit()
             updated = cursor.rowcount > 0
             conn.close()
