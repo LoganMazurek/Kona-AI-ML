@@ -372,7 +372,7 @@
                     <tr>
                         <td>Source Event ID <span class="optional-badge">optional</span></td>
                         <td>sched-evt-2025-08-15-001</td>
-                        <td>Best dedup key when available from your scheduler/CRM</td>
+                        <td>Best deduplication key when available from KonaOS</td>
                     </tr>
                     <tr>
                         <td>Event Date <span class="required-badge">required</span></td>
@@ -413,8 +413,8 @@
             </table>
             <p style="font-size:13px; color:#888; margin-top:10px;">
                 <strong>Deduplication:</strong> Exact duplicate rows in the same file are skipped.
-                Cross-upload dedup is only enforced when Source Event ID is provided, or when
-                Equipment Number is present with matching date/time/location.
+                Cross-upload dedup uses Source Event ID when available, then Equipment Number +
+                schedule/location, and finally a conservative event/schedule/location fallback key.
             </p>
         </div>
 

@@ -790,7 +790,7 @@
                         <th>Predicted Total Revenue</th>
                         <th>Actual Net Sales</th>
                         <th>Confidence Range</th>
-                        <th>Date</th>
+                        <th>Event Date</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -848,7 +848,7 @@
                             {% endif %}
                         </td>
                         <td>${{ pred.confidence_lower|round(2) }} - ${{ pred.confidence_upper|round(2) }}</td>
-                        <td>{{ pred.created_timestamp|mdy_date }}</td>
+                        <td>{{ (pred.scheduled_event_date or pred.actual_updated_timestamp or pred.created_timestamp)|mdy_date }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

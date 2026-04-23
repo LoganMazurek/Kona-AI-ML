@@ -9,7 +9,6 @@ from typing import Dict, Optional, Any
 import json
 import os
 from census import Census
-from us import states
 
 try:
     from uszipcode import SearchEngine

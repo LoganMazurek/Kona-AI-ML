@@ -29,18 +29,29 @@ except ImportError:
 
 # Import other modules
 try:
+    from datetime_utils import parse_datetime_column
+    from demographics import enrich_dataframe_with_demographics
+except ImportError:
     # Prefer package-style import when installed as a package
     from Kona_AI_ML.datetime_utils import parse_datetime_column
     from Kona_AI_ML.demographics import enrich_dataframe_with_demographics
-    from Kona_AI_ML.outdated.feature_engineering import apply_phase1_feature_engineering, apply_phase2_feature_engineering
-except Exception:
-    # Fallback when running the script directly (not as a package)
+
+
+def _missing_feature_engineering(*_args, **_kwargs):
+    raise ImportError(
+        'Legacy feature engineering module is not available in this workspace. '
+        'Training and deprecated preprocessing paths require feature_engineering.py.'
+    )
+
+
+try:
+    from feature_engineering import apply_phase1_feature_engineering, apply_phase2_feature_engineering
+except ImportError:
     try:
-        from datetime_utils import parse_datetime_column
-        from demographics import enrich_dataframe_with_demographics
         from Kona_AI_ML.outdated.feature_engineering import apply_phase1_feature_engineering, apply_phase2_feature_engineering
-    except ImportError as e:
-        print(f"Error importing modules: {e}")
+    except ImportError:
+        apply_phase1_feature_engineering = _missing_feature_engineering
+        apply_phase2_feature_engineering = _missing_feature_engineering
 
 
 class EnsembleRegressor(BaseEstimator, RegressorMixin):
