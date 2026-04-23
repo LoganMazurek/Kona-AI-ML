@@ -15,6 +15,8 @@ import json
 import tempfile
 import requests
 import uuid
+import hashlib
+import re
 from catboost import Pool
 from weather_data import WeatherDataEnricher
 from joblib import load as joblib_load
@@ -78,6 +80,22 @@ TEMPLATES_DIR = os.path.join(PARENT_DIR, 'templates')
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
 
 DATE_DISPLAY_FORMAT = "%m/%d/%Y"
+REALIZED_EVENT_STATUSES = {'completed'}
+PIPELINE_EVENT_STATUSES = {'booked_confirmed', 'needs_outcome'}
+FORECAST_EVENT_STATUSES = {'predicted_only'}
+
+
+def _normalize_event_status(value, default='predicted_only'):
+    allowed_statuses = {
+        'predicted_only',
+        'booked_confirmed',
+        'needs_outcome',
+        'completed',
+        'cancelled',
+        'rescheduled',
+    }
+    status = str(value or '').strip().lower()
+    return status if status in allowed_statuses else default
 
 
 def _try_parse_datetime(value):
@@ -1622,10 +1640,13 @@ def dashboard():
     
     # Get available models from actual production deployment
     available_models = get_franchise_available_models(franchise['franchise_id'])
+    dashboard_stats = franchise_db.get_prediction_dashboard_stats(franchise['franchise_id'])
     
     # Get recent predictions from database
     recent_predictions = franchise_db.get_recent_predictions(franchise['franchise_id'], limit=50)
     has_test_predictions = any(pred.get('is_test') for pred in recent_predictions)
+    for pred in recent_predictions:
+        pred['event_status'] = _normalize_event_status(pred.get('event_status'))
     
     # Try to get default model from database, fallback to first available
     default_model_id = franchise.get('default_model_id')
@@ -1642,6 +1663,11 @@ def dashboard():
                           models=available_models,
                           default_model=default_model,
                           recent_predictions=recent_predictions,
+                          realized_count=dashboard_stats['realized_count'],
+                          realized_total=dashboard_stats['realized_total'],
+                          forecast_count=dashboard_stats['forecast_count'],
+                          booked_count=dashboard_stats['booked_count'],
+                          needs_outcome_count=dashboard_stats['needs_outcome_count'],
                           target_net_sales_per_hour=franchise.get('target_net_sales_per_hour'),
                           has_test_predictions=has_test_predictions)
 
@@ -1670,6 +1696,25 @@ def update_actual_net_sales():
         actual_total
     )
 
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/predictions/update-status', methods=['POST'])
+@require_auth
+def update_prediction_status():
+    """Update lifecycle status for a prediction."""
+    prediction_id = request.form.get('prediction_id', '').strip()
+    event_status = _normalize_event_status(request.form.get('event_status'))
+
+    if not prediction_id:
+        return redirect(url_for('dashboard'))
+
+    franchise_db.update_prediction_status(
+        get_current_franchise_id(),
+        prediction_id,
+        event_status,
+        include_in_training=False,
+    )
     return redirect(url_for('dashboard'))
 
 
@@ -1896,6 +1941,10 @@ def predict():
                 actual_total = float(actual_str)
             except ValueError:
                 actual_total = None
+        submitted_status = 'booked_confirmed' if str(form_data.get('is_booked', '')).lower() in {'1', 'true', 'on', 'yes'} else 'predicted_only'
+        if actual_total is not None:
+            submitted_status = 'completed'
+
         saved = franchise_db.record_prediction(
             prediction_id=prediction_id,
             franchise_id=franchise_id,
@@ -1907,7 +1956,10 @@ def predict():
             confidence_lower=float(total_lower),
             confidence_upper=float(total_upper),
             is_test=is_test,
-            actual_total_net_sales=actual_total
+            actual_total_net_sales=actual_total,
+            event_status=submitted_status,
+            include_in_training=actual_total is not None,
+            scheduled_event_date=event_date_str,
         )
         if not saved:
             print("[WARN] Failed to save prediction record")
@@ -1929,6 +1981,7 @@ def predict():
             'confidence_percentage': float(confidence_pct),
             'model_cv_mae': float(cv_mae or 312.66),
             'model_type': model_type,
+            'event_status': submitted_status,
             'duration': f"{duration:.1f}",
             'target_net_sales_per_hour': float(target_per_hour) if target_per_hour else None,
             # Event details for summary display
@@ -1974,6 +2027,515 @@ def get_industries():
     # Get industries from the historical data
     industries = INDUSTRIES
     return jsonify({'industries': industries})
+
+
+# ===== BULK UPLOAD ROUTES =====
+
+BULK_UPLOAD_COLUMNS = [
+    'Event Name',
+    'Industry',
+    'Equipment Type',
+    'Equipment Number',
+    'Source Event ID',
+    'Event Date',
+    'Start Time',
+    'Duration (Hours)',
+    'City',
+    'ZIP Code',
+    'Temperature (°F)',
+    'Net Sales',
+]
+
+BULK_UPLOAD_EXAMPLE_ROW = [
+    'Summer Festival',
+    'Festival',
+    'Blended Truck',
+    'TRK-12',
+    'sched-evt-2025-08-15-001',
+    '2025-08-15',
+    '10:00',
+    '6',
+    'Portland',
+    '97201',
+    '75',
+    '',
+]
+
+
+def _normalize_bulk_key_text(value: object) -> str:
+    """Normalize text so dedup keys are case/whitespace/punctuation insensitive."""
+    text = str(value or '').strip().lower()
+    if not text:
+        return ''
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[^a-z0-9 ]+', '', text)
+    return text.strip()
+
+
+def _normalize_bulk_time(value: object) -> str:
+    """Normalize start time to HH:MM when possible."""
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    for fmt in ('%H:%M', '%H:%M:%S', '%I:%M %p', '%I:%M%p'):
+        try:
+            return datetime.strptime(text, fmt).strftime('%H:%M')
+        except ValueError:
+            continue
+    return _normalize_bulk_key_text(text)
+
+
+def _build_bulk_strong_dedup_key(
+    source_event_id: str,
+    equipment_number: str,
+    event_date_str: str,
+    start_time_str: str,
+    duration_hours: float,
+    city: str,
+    zip_code: str,
+) -> str:
+    """
+    Build a durable dedup key only when we have a stable identifier.
+    Without stable IDs, we avoid cross-upload dedup to prevent false positives.
+    """
+    source_id_norm = _normalize_bulk_key_text(source_event_id)
+    if source_id_norm:
+        return f'v2:source:{source_id_norm}'
+
+    equipment_norm = _normalize_bulk_key_text(equipment_number)
+    if equipment_norm:
+        return '|'.join([
+            'v2:eq',
+            _normalize_bulk_key_text(event_date_str),
+            _normalize_bulk_time(start_time_str),
+            f'{float(duration_hours):.3f}',
+            _normalize_bulk_key_text(city),
+            _normalize_bulk_key_text(zip_code),
+            equipment_norm,
+        ])
+
+    return ''
+
+
+def _build_bulk_fallback_dedup_key(
+    event_name: str,
+    industry: str,
+    event_date_str: str,
+    start_time_str: str,
+    duration_hours: float,
+    city: str,
+    zip_code: str,
+) -> str:
+    """Build a conservative fallback dedup key for schedule imports without stable IDs."""
+    return '|'.join([
+        'v2:weak',
+        _normalize_bulk_key_text(event_name),
+        _normalize_bulk_key_text(industry),
+        _normalize_bulk_key_text(event_date_str),
+        _normalize_bulk_time(start_time_str),
+        f'{float(duration_hours):.3f}',
+        _normalize_bulk_key_text(city),
+        _normalize_bulk_key_text(zip_code),
+    ])
+
+
+def _build_bulk_row_fingerprint(parts: list[str]) -> str:
+    """Hash full row content to catch accidental duplicate rows in the same file."""
+    normalized = '|'.join(_normalize_bulk_key_text(part) for part in parts)
+    return hashlib.sha1(normalized.encode('utf-8')).hexdigest()
+
+
+@app.route('/bulk-upload/template')
+@require_auth
+def bulk_upload_template():
+    """Return a downloadable Excel template for bulk event upload."""
+    import io
+    try:
+        import openpyxl
+    except ImportError:
+        return jsonify({'error': 'openpyxl is not installed on the server'}), 500
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Events'
+    ws.append(BULK_UPLOAD_COLUMNS)
+    ws.append(BULK_UPLOAD_EXAMPLE_ROW)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    response = make_response(buf.read())
+    response.headers['Content-Type'] = (
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response.headers['Content-Disposition'] = (
+        'attachment; filename="bulk_upload_template.xlsx"'
+    )
+    return response
+
+
+@app.route('/bulk-upload', methods=['GET', 'POST'])
+@require_auth
+def bulk_upload_page():
+    """Render and process the bulk event upload page."""
+    franchise_id = get_current_franchise_id()
+    recent_uploads = franchise_db.get_recent_batch_uploads(franchise_id, limit=10)
+
+    if request.method == 'GET':
+        return render_template('bulk_upload.html', recent_uploads=recent_uploads)
+
+    # --- POST: process the uploaded file ---
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': ['No file was uploaded.']},
+        )
+
+    filename = uploaded_file.filename.lower()
+    if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': ['Only .xlsx and .xls files are accepted.']},
+        )
+
+    try:
+        import io as _io
+        file_bytes = _io.BytesIO(uploaded_file.read())
+        df = pd.read_excel(file_bytes, engine='openpyxl', dtype=str)
+    except Exception as exc:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': [f'Could not read file: {exc}']},
+        )
+
+    required_cols = {
+        'Industry',
+        'Equipment Type',
+        'Event Date',
+        'Start Time',
+        'Duration (Hours)',
+        'City',
+        'ZIP Code',
+    }
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': [f'Missing required columns: {", ".join(sorted(missing_cols))}']},
+        )
+
+    # Ensure the bulk_dedup_key column exists (added once, idempotent via PRAGMA check)
+    import sqlite3 as _sqlite3
+    try:
+        conn = franchise_db.get_connection()
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(predictions)")
+        col_names = {row_info[1] for row_info in cur.fetchall()}
+        if 'bulk_dedup_key' not in col_names:
+            cur.execute("ALTER TABLE predictions ADD COLUMN bulk_dedup_key TEXT DEFAULT ''")
+            conn.commit()
+        conn.close()
+    except _sqlite3.OperationalError:
+        pass
+
+    # Build lookup for existing dedup keys for this franchise.
+    existing_predictions_by_key = {}
+    try:
+        conn = franchise_db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''SELECT prediction_id, bulk_dedup_key, actual_total_net_sales
+               FROM predictions
+               WHERE franchise_id = ?
+                 AND bulk_dedup_key IS NOT NULL
+                 AND TRIM(bulk_dedup_key) != ''
+            ''',
+            (franchise_id,)
+        )
+        for row in cur.fetchall():
+            key = row['bulk_dedup_key']
+            if isinstance(key, str) and key:
+                existing_predictions_by_key[key] = {
+                    'prediction_id': row['prediction_id'],
+                    'actual_total_net_sales': row['actual_total_net_sales'],
+                }
+        conn.close()
+    except Exception:
+        existing_predictions_by_key = {}
+
+    seen_file_fingerprints = set()
+
+    added = 0
+    outcomes = 0
+    skipped = 0
+    errors = []
+    today = datetime.utcnow().date()
+    batch_model_id = 'bulk_upload'
+
+    def _cell_text(row_data, column_name: str) -> str:
+        value = row_data.get(column_name, '')
+        if pd.isna(value):
+            return ''
+        return str(value).strip()
+
+    if PROD_MANAGER is None:
+        return render_template(
+            'bulk_upload.html',
+            recent_uploads=recent_uploads,
+            results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                     'errors': ['Model not loaded. Please try again later.']},
+        )
+
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2  # 1-based, header is row 1
+
+        event_name = _cell_text(row, 'Event Name')
+        industry = _cell_text(row, 'Industry')
+        equipment_type = _cell_text(row, 'Equipment Type')
+        equipment_number = _cell_text(row, 'Equipment Number')
+        source_event_id = _cell_text(row, 'Source Event ID')
+        event_date_str = _cell_text(row, 'Event Date')
+        start_time_str = _cell_text(row, 'Start Time')
+        duration_str = _cell_text(row, 'Duration (Hours)')
+        city = _cell_text(row, 'City')
+        zip_code = _cell_text(row, 'ZIP Code')
+        temperature_str = _cell_text(row, 'Temperature (°F)')
+        net_sales_str = _cell_text(row, 'Net Sales')
+
+        # Validate required fields
+        row_errors = []
+        if not event_date_str:
+            row_errors.append('Event Date is required')
+        if not city:
+            row_errors.append('City is required')
+        if not zip_code:
+            row_errors.append('ZIP Code is required')
+        if not duration_str:
+            row_errors.append('Duration (Hours) is required')
+        if not start_time_str:
+            row_errors.append('Start Time is required')
+        if not industry:
+            row_errors.append('Industry is required')
+        if not equipment_type:
+            row_errors.append('Equipment Type is required')
+
+        if row_errors:
+            errors.append(f'Row {row_num}: {"; ".join(row_errors)}')
+            continue
+
+        # Parse event date
+        try:
+            event_date = datetime.strptime(event_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append(f'Row {row_num}: Invalid Event Date format (expected YYYY-MM-DD)')
+            continue
+
+        # Parse duration
+        try:
+            duration_hours = float(duration_str)
+            if duration_hours <= 0:
+                raise ValueError('non-positive')
+        except ValueError:
+            errors.append(f'Row {row_num}: Invalid Duration (Hours) value')
+            continue
+
+        row_fingerprint = _build_bulk_row_fingerprint([
+            event_name,
+            industry,
+            equipment_type,
+            equipment_number,
+            source_event_id,
+            event_date_str,
+            start_time_str,
+            duration_str,
+            city,
+            zip_code,
+            net_sales_str,
+        ])
+
+        # Always dedup exact duplicate rows within the same uploaded file.
+        if row_fingerprint in seen_file_fingerprints:
+            skipped += 1
+            continue
+
+        strong_dedup_key = _build_bulk_strong_dedup_key(
+            source_event_id=source_event_id,
+            equipment_number=equipment_number,
+            event_date_str=event_date_str,
+            start_time_str=start_time_str,
+            duration_hours=duration_hours,
+            city=city,
+            zip_code=zip_code,
+        )
+        dedup_key = strong_dedup_key or _build_bulk_fallback_dedup_key(
+            event_name=event_name,
+            industry=industry,
+            event_date_str=event_date_str,
+            start_time_str=start_time_str,
+            duration_hours=duration_hours,
+            city=city,
+            zip_code=zip_code,
+        )
+
+        # Parse optional net sales before dedup handling so existing-event
+        # updates can apply outcomes from this upload.
+        net_sales = None
+        if net_sales_str:
+            try:
+                net_sales = float(net_sales_str)
+                if net_sales < 0:
+                    net_sales = None
+            except ValueError:
+                pass
+
+        existing = existing_predictions_by_key.get(dedup_key)
+        if existing:
+            updated_existing_outcome = False
+            if event_date < today and net_sales and net_sales > 0 and existing.get('actual_total_net_sales') is None:
+                updated_existing_outcome = franchise_db.update_actual_net_sales(
+                    franchise_id,
+                    existing['prediction_id'],
+                    net_sales,
+                )
+            if updated_existing_outcome:
+                outcomes += 1
+            skipped += 1
+            seen_file_fingerprints.add(row_fingerprint)
+            continue
+
+        # Build event_name if blank
+        if not event_name:
+            event_name = f'{industry or "Event"} - {city} ({event_date_str})'
+
+        prediction_id = uuid.uuid4().hex
+
+        # Generate prediction for each uploaded event.
+        try:
+            zip_code_norm = str(zip_code).zfill(5)
+            prediction_form_data = {
+                'industry': industry,
+                'equipment_type': equipment_type,
+                'event_date': event_date_str,
+                'start_time': start_time_str,
+                'duration': str(duration_hours),
+                'city': city,
+                'zip_code': zip_code_norm,
+                'temperature': temperature_str,
+                'has_smoothie_capability': '1' if equipment_type.lower() == 'blended truck' else '0',
+            }
+
+            demographics = get_demographics_from_zip(zip_code_norm)
+            weather_info = get_weather_for_event(
+                zip_code_norm,
+                datetime.strptime(event_date_str, '%Y-%m-%d'),
+                user_temperature=temperature_str,
+            )
+
+            from clean_layers_feature_preparation import prepare_features_for_clean_layers_model
+            feature_df, _ = prepare_features_for_clean_layers_model(
+                form_data=prediction_form_data,
+                franchise_id=franchise_id,
+                demographics_dict=demographics,
+                weather_dict=weather_info,
+                franchise_history=None,
+                return_raw_values=True,
+            )
+
+            if feature_df is None or feature_df.empty:
+                errors.append(f'Row {row_num}: Could not prepare model features for prediction')
+                continue
+
+            predictions, model_type = PROD_MANAGER.predict(feature_df, franchise_id=franchise_id)
+            y_hat = float(predictions[0]) if hasattr(predictions, '__len__') else float(predictions)
+            total_net_sales = y_hat
+            net_sales_per_hour = total_net_sales / duration_hours if duration_hours > 0 else total_net_sales
+            total_lower = max(0.0, total_net_sales * 0.8)
+            total_upper = total_net_sales * 1.2
+            model_id = f'franchise_{franchise_id}' if model_type == 'franchise_specific' else 'clean_layers_ensemble'
+            batch_model_id = model_id
+        except Exception as pred_err:
+            errors.append(f'Row {row_num}: Prediction failed: {pred_err}')
+            continue
+
+        if event_date < today:
+            row_status = 'completed' if net_sales and net_sales > 0 else 'needs_outcome'
+        else:
+            row_status = 'booked_confirmed'
+
+        saved = franchise_db.record_prediction(
+            prediction_id=prediction_id,
+            franchise_id=franchise_id,
+            model_id=model_id,
+            event_name=event_name,
+            duration_hours=duration_hours,
+            predicted_revenue_per_hour=float(net_sales_per_hour),
+            predicted_total_revenue=float(total_net_sales),
+            confidence_lower=float(total_lower),
+            confidence_upper=float(total_upper),
+            is_test=False,
+            actual_total_net_sales=None,
+            event_status=row_status,
+            include_in_training=False,
+            scheduled_event_date=event_date_str,
+        )
+        if not saved:
+            errors.append(f'Row {row_num}: Could not save prediction record')
+            continue
+
+        # Persist dedup key so future uploads can detect duplicates
+        try:
+            conn = franchise_db.get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE predictions SET bulk_dedup_key = ? WHERE prediction_id = ?",
+                (dedup_key, prediction_id),
+            )
+            conn.commit()
+            conn.close()
+        except _sqlite3.OperationalError as _db_err:
+            errors.append(f'Row {row_num}: Could not store dedup key: {_db_err}')
+
+        seen_file_fingerprints.add(row_fingerprint)
+        existing_predictions_by_key[dedup_key] = {
+            'prediction_id': prediction_id,
+            'actual_total_net_sales': None,
+        }
+        added += 1
+
+        # If past event with positive net sales, log the outcome
+        if event_date < today and net_sales and net_sales > 0:
+            updated = franchise_db.update_actual_net_sales(franchise_id, prediction_id, net_sales)
+            if updated:
+                outcomes += 1
+                existing_predictions_by_key[dedup_key]['actual_total_net_sales'] = net_sales
+
+    # Record the batch upload in history
+    batch_id = uuid.uuid4().hex
+    franchise_db.record_batch_upload(
+        batch_id=batch_id,
+        franchise_id=franchise_id,
+        model_id=batch_model_id,
+        original_filename=uploaded_file.filename,
+        event_count=added,
+        result_csv_path='',
+    )
+
+    recent_uploads = franchise_db.get_recent_batch_uploads(franchise_id, limit=10)
+    return render_template(
+        'bulk_upload.html',
+        recent_uploads=recent_uploads,
+        results={'added': added, 'outcomes': outcomes, 'skipped': skipped, 'errors': errors},
+    )
 
 
 if __name__ == '__main__':

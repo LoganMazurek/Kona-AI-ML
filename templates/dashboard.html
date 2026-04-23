@@ -108,6 +108,40 @@
             color: #666;
             font-size: 16px;
         }
+
+        .lifecycle-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .summary-card {
+            background: white;
+            padding: 22px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .summary-card h3 {
+            color: #667085;
+            font-size: 13px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .summary-value {
+            color: #2d3748;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .summary-detail {
+            color: #718096;
+            font-size: 13px;
+            margin-top: 6px;
+        }
         
         .actions-grid {
             display: grid;
@@ -383,6 +417,81 @@
             margin-left: 8px;
         }
 
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 9px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid transparent;
+            text-transform: capitalize;
+        }
+
+        .status-predicted-only {
+            background: #eef2ff;
+            color: #4c51bf;
+            border-color: #c3dafe;
+        }
+
+        .status-booked-confirmed {
+            background: #e6fffa;
+            color: #0f766e;
+            border-color: #99f6e4;
+        }
+
+        .status-needs-outcome {
+            background: #fff7ed;
+            color: #c05621;
+            border-color: #fbd38d;
+        }
+
+        .status-completed {
+            background: #e7f6ee;
+            color: #1b7a45;
+            border-color: #bfe6cf;
+        }
+
+        .status-cancelled,
+        .status-rescheduled {
+            background: #edf2f7;
+            color: #4a5568;
+            border-color: #cbd5e0;
+        }
+
+        .status-form {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .status-select {
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            background: white;
+        }
+
+        .status-save {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: none;
+            background-color: #4c51bf;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .record-note {
+            font-size: 12px;
+            color: #718096;
+            margin-top: 6px;
+        }
+
         .prediction-actions {
             display: flex;
             align-items: center;
@@ -560,12 +669,40 @@
                 </a>
             </div>
             
-            <div class="action-card disabled" aria-disabled="true">
-                <a href="#" tabindex="-1" aria-hidden="true">
+            <div class="action-card">
+                <a href="{{ url_for('bulk_upload_page') }}">
                     <div class="action-icon">📤</div>
                     <h3>Batch Upload</h3>
-                    <p>Upload CSV and predict multiple events</p>
+                    <p>Upload Excel file and predict multiple events</p>
                 </a>
+            </div>
+        </div>
+
+        <div class="lifecycle-summary">
+            <div class="summary-card">
+                <h3>Completed Events</h3>
+                <div class="summary-value">{{ realized_count }}</div>
+                <div class="summary-detail">Included in realized performance and training</div>
+            </div>
+            <div class="summary-card">
+                <h3>Realized Net Sales</h3>
+                <div class="summary-value">${{ realized_total|round(2) }}</div>
+                <div class="summary-detail">Based only on completed events with actuals</div>
+            </div>
+            <div class="summary-card">
+                <h3>Forecast Only</h3>
+                <div class="summary-value">{{ forecast_count }}</div>
+                <div class="summary-detail">Predictions that are not yet confirmed bookings</div>
+            </div>
+            <div class="summary-card">
+                <h3>Booked Pipeline</h3>
+                <div class="summary-value">{{ booked_count }}</div>
+                <div class="summary-detail">Booked future events waiting to happen</div>
+            </div>
+            <div class="summary-card">
+                <h3>Needs Outcome</h3>
+                <div class="summary-value">{{ needs_outcome_count }}</div>
+                <div class="summary-detail">Past events still missing actual net sales</div>
             </div>
         </div>
         
@@ -633,7 +770,7 @@
         <!-- Recent Predictions Section -->
         {% if recent_predictions %}
         <div class="recent-predictions">
-            <h3>Recent Predictions</h3>
+            <h3>Recent Event Records</h3>
             {% if has_test_predictions %}
             <div class="prediction-actions">
                 <label>
@@ -648,11 +785,12 @@
                     <tr>
                         <th></th>
                         <th>Event</th>
+                        <th>Status</th>
                         <th>Predicted Revenue/Hour</th>
                         <th>Predicted Total Revenue</th>
                         <th>Actual Net Sales</th>
                         <th>Confidence Range</th>
-                        <th>Date</th>
+                        <th>Event Date</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -668,6 +806,26 @@
                             {% if pred.is_test %}
                                 <span class="test-badge">Test</span>
                             {% endif %}
+                            {% if pred.scheduled_event_date %}
+                                <div class="record-note">Scheduled: {{ pred.scheduled_event_date|mdy_date }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ pred.event_status|replace('_', '-') }}">
+                                {{ pred.event_status|replace('_', ' ') }}
+                            </span>
+                            <form class="status-form" method="POST" action="{{ url_for('update_prediction_status') }}">
+                                <input type="hidden" name="prediction_id" value="{{ pred.prediction_id }}">
+                                <select class="status-select" name="event_status">
+                                    <option value="predicted_only" {% if pred.event_status == 'predicted_only' %}selected{% endif %}>Forecast Only</option>
+                                    <option value="booked_confirmed" {% if pred.event_status == 'booked_confirmed' %}selected{% endif %}>Booked</option>
+                                    <option value="needs_outcome" {% if pred.event_status == 'needs_outcome' %}selected{% endif %}>Needs Outcome</option>
+                                    <option value="completed" {% if pred.event_status == 'completed' %}selected{% endif %}>Completed</option>
+                                    <option value="cancelled" {% if pred.event_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                                    <option value="rescheduled" {% if pred.event_status == 'rescheduled' %}selected{% endif %}>Rescheduled</option>
+                                </select>
+                                <button class="status-save" type="submit">Save</button>
+                            </form>
                         </td>
                         <td>${{ pred.predicted_revenue_per_hour|round(2) }}</td>
                         <td>${{ pred.predicted_total_revenue|round(2) }}</td>
@@ -690,7 +848,7 @@
                             {% endif %}
                         </td>
                         <td>${{ pred.confidence_lower|round(2) }} - ${{ pred.confidence_upper|round(2) }}</td>
-                        <td>{{ pred.created_timestamp|mdy_date }}</td>
+                        <td>{{ (pred.scheduled_event_date or pred.actual_updated_timestamp or pred.created_timestamp)|mdy_date }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
