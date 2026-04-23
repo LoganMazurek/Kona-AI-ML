@@ -1603,9 +1603,16 @@ def login_page():
         return render_template('login.html', error=error)
     
     # Create response and set session cookie
-    next_page_raw = request.args.get('next')
-    if next_page_raw and is_safe_redirect_target(next_page_raw):
-        next_page = next_page_raw
+    next_page_raw = request.args.get('next', '')
+    next_page_candidate = next_page_raw.replace('\\', '')
+    parsed_next = urlparse(next_page_candidate)
+    if (
+        next_page_candidate
+        and not parsed_next.scheme
+        and not parsed_next.netloc
+        and next_page_candidate.startswith('/')
+    ):
+        next_page = next_page_candidate
     else:
         next_page = url_for('dashboard')
     response = make_response(redirect(next_page))
