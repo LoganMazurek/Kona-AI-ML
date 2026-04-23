@@ -2020,7 +2020,7 @@ def predict():
         traceback.print_exc()
         return jsonify({
             'success': False,
-            'error': f'Prediction error: {str(e)}'
+            'error': 'An internal error has occurred. Please try again later.'
         }), 500
 
 
