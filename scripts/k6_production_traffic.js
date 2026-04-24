@@ -1,0 +1,184 @@
+import http from 'k6/http';
+import { check, group, sleep } from 'k6';
+import { Trend, Rate } from 'k6/metrics';
+
+const BASE_URL = (__ENV.BASE_URL || 'https://loganmazurek.com').replace(/\/$/, '');
+const LOGIN_ID = __ENV.LOGIN_ID || '';
+const LOGIN_PASSWORD = __ENV.LOGIN_PASSWORD || '';
+const ENABLE_PREDICT = (__ENV.ENABLE_PREDICT || 'true').toLowerCase() === 'true';
+const PREDICT_SHARE = Number(__ENV.PREDICT_SHARE || '0.35');
+
+const INDUSTRIES = ['Festival', 'Corporate', 'Community', 'Education', 'Private'];
+const EQUIPMENT = ['truck', 'blended truck', 'kiosk', 'mini'];
+const CITIES = ['Naperville', 'Aurora', 'Plainfield', 'Joliet', 'Shorewood'];
+const ZIPS = ['60540', '60504', '60564', '60435', '60431'];
+
+const predictionDuration = new Trend('prediction_duration', true);
+const loginFailureRate = new Rate('login_failures');
+const predictFailureRate = new Rate('predict_failures');
+
+let loggedIn = false;
+
+export const options = {
+  scenarios: {
+    production_mix: {
+      executor: 'ramping-vus',
+      startVUs: 1,
+      stages: [
+        { duration: '2m', target: 2 },
+        { duration: '3m', target: 5 },
+        { duration: '5m', target: 10 },
+        { duration: '3m', target: 15 },
+        { duration: '2m', target: 0 },
+      ],
+      gracefulRampDown: '30s',
+    },
+  },
+  thresholds: {
+    http_req_failed: ['rate<0.02'],
+    http_req_duration: ['p(95)<1200'],
+    login_failures: ['rate<0.02'],
+    predict_failures: ['rate<0.03'],
+    prediction_duration: ['p(95)<2500'],
+  },
+};
+
+function randomChoice(values) {
+  return values[Math.floor(Math.random() * values.length)];
+}
+
+function randomFutureDate() {
+  const daysAhead = 3 + Math.floor(Math.random() * 60);
+  const d = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function think(minSeconds, maxSeconds) {
+  const t = minSeconds + Math.random() * (maxSeconds - minSeconds);
+  sleep(t);
+}
+
+function ensureLoggedIn() {
+  if (loggedIn) {
+    return true;
+  }
+
+  if (!LOGIN_ID || !LOGIN_PASSWORD) {
+    return false;
+  }
+
+  const res = http.post(
+    `${BASE_URL}/login`,
+    {
+      franchise_id: LOGIN_ID,
+      password: LOGIN_PASSWORD,
+    },
+    {
+      redirects: 1,
+      tags: { name: 'POST /login' },
+    }
+  );
+
+  const ok = check(res, {
+    'login returns 200 after redirect': (r) => r.status === 200,
+    'login response is html': (r) => (r.headers['Content-Type'] || '').includes('text/html'),
+  });
+
+  loginFailureRate.add(!ok);
+  loggedIn = ok;
+  return ok;
+}
+
+function browseUnauthenticated() {
+  group('guest browse', () => {
+    const loginPage = http.get(`${BASE_URL}/login`, { tags: { name: 'GET /login' } });
+    check(loginPage, {
+      'guest login page 200': (r) => r.status === 200,
+    });
+    think(0.3, 1.0);
+
+    // Unauthenticated root should redirect to login.
+    const home = http.get(`${BASE_URL}/`, { redirects: 0, tags: { name: 'GET / (guest)' } });
+    check(home, {
+      'guest root redirect': (r) => r.status === 302 || r.status === 301,
+    });
+  });
+}
+
+function browseAuthenticated() {
+  group('authenticated browse', () => {
+    const dash = http.get(`${BASE_URL}/dashboard`, { tags: { name: 'GET /dashboard' } });
+    check(dash, {
+      'dashboard 200': (r) => r.status === 200,
+    });
+    think(0.5, 1.5);
+
+    const home = http.get(`${BASE_URL}/`, { tags: { name: 'GET / (auth)' } });
+    check(home, {
+      'auth home 200': (r) => r.status === 200,
+    });
+  });
+}
+
+function submitPrediction() {
+  if (!ENABLE_PREDICT) {
+    return;
+  }
+
+  const payload = {
+    event_name: `Load Test Event ${Date.now()}`,
+    industry: randomChoice(INDUSTRIES),
+    equipment_type: randomChoice(EQUIPMENT),
+    event_date: randomFutureDate(),
+    start_time: '11:00',
+    duration: (2 + Math.random() * 4).toFixed(1),
+    city: randomChoice(CITIES),
+    zip_code: randomChoice(ZIPS),
+    temperature: String(45 + Math.floor(Math.random() * 40)),
+    is_test: '1',
+    is_booked: Math.random() < 0.4 ? '1' : '0',
+  };
+
+  const res = http.post(`${BASE_URL}/predict`, payload, {
+    tags: { name: 'POST /predict' },
+    timeout: '45s',
+  });
+
+  predictionDuration.add(res.timings.duration);
+
+  const ok = check(res, {
+    'predict status 200': (r) => r.status === 200,
+    'predict returns json': (r) => (r.headers['Content-Type'] || '').includes('application/json'),
+    'predict success true': (r) => {
+      try {
+        return r.json('success') === true;
+      } catch (e) {
+        return false;
+      }
+    },
+  });
+
+  predictFailureRate.add(!ok);
+}
+
+export default function () {
+  browseUnauthenticated();
+  think(0.2, 0.8);
+
+  if (!ensureLoggedIn()) {
+    return;
+  }
+
+  browseAuthenticated();
+  think(0.6, 1.8);
+
+  if (Math.random() < PREDICT_SHARE) {
+    group('prediction path', () => {
+      submitPrediction();
+      think(0.5, 1.5);
+    });
+  }
+}
