@@ -471,6 +471,101 @@ class FranchiseDatabase:
         conn.close()
         return [dict(row) for row in rows]
 
+    def get_recent_predictions_page(
+        self,
+        franchise_id: str,
+        page: int = 1,
+        page_size: int = 20,
+        status_filter: str = 'all',
+        sort_by: str = 'created_timestamp',
+        sort_dir: str = 'desc',
+    ) -> Tuple[List[Dict], int]:
+        """Get paginated recent predictions for a franchise with filtering and sorting."""
+        safe_page = max(1, int(page or 1))
+        safe_page_size = max(1, min(100, int(page_size or 20)))
+        offset = (safe_page - 1) * safe_page_size
+
+        allowed_statuses = {
+            'predicted_only',
+            'booked_confirmed',
+            'needs_outcome',
+            'completed',
+            'cancelled',
+            'rescheduled',
+        }
+        normalized_status_filter = str(status_filter or 'all').strip().lower()
+        if normalized_status_filter not in allowed_statuses:
+            normalized_status_filter = 'all'
+
+        sort_column_map = {
+            'created_timestamp': 'created_timestamp',
+            'event_name': 'event_name',
+            'event_status': 'event_status',
+            'event_date': 'scheduled_event_date',
+            'predicted_revenue_per_hour': 'predicted_revenue_per_hour',
+            'predicted_total_revenue': 'predicted_total_revenue',
+            'actual_total_net_sales': 'actual_total_net_sales',
+            'predicted_vs_actual_diff': '(predicted_total_revenue - actual_total_net_sales)',
+            'actual_revenue_per_hour': 'actual_revenue_per_hour',
+            'confidence_lower': 'confidence_lower',
+            'confidence_upper': 'confidence_upper',
+            'duration_hours': 'duration_hours',
+        }
+        numeric_sort_fields = {
+            'predicted_revenue_per_hour',
+            'predicted_total_revenue',
+            'actual_total_net_sales',
+            'predicted_vs_actual_diff',
+            'actual_revenue_per_hour',
+            'confidence_lower',
+            'confidence_upper',
+            'duration_hours',
+        }
+
+        safe_sort_by = str(sort_by or 'created_timestamp').strip().lower()
+        sort_column = sort_column_map.get(safe_sort_by, 'created_timestamp')
+        safe_sort_dir = 'asc' if str(sort_dir or '').strip().lower() == 'asc' else 'desc'
+
+        where_clause = 'WHERE franchise_id = ?'
+        where_params: List = [franchise_id]
+        if normalized_status_filter != 'all':
+            where_clause += ' AND event_status = ?'
+            where_params.append(normalized_status_filter)
+
+        if safe_sort_by in numeric_sort_fields:
+            order_by_clause = f"{sort_column} IS NULL ASC, {sort_column} {safe_sort_dir.upper()}, created_timestamp DESC"
+        else:
+            order_by_clause = f"{sort_column} {safe_sort_dir.upper()}, created_timestamp DESC"
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            f'''
+            SELECT COUNT(*) AS total_count
+            FROM predictions
+            {where_clause}
+            ''',
+            tuple(where_params),
+        )
+        total_count_row = cursor.fetchone()
+        total_count = int(total_count_row['total_count'] or 0) if total_count_row else 0
+
+        cursor.execute(
+            f'''
+            SELECT *
+            FROM predictions
+            {where_clause}
+            ORDER BY {order_by_clause}
+            LIMIT ? OFFSET ?
+            ''',
+            tuple(where_params + [safe_page_size, offset]),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows], total_count
+
     def get_prediction_dashboard_stats(self, franchise_id: str) -> Dict[str, float]:
         """Return full-history lifecycle and realized performance stats for the dashboard."""
         conn = self.get_connection()

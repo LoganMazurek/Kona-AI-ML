@@ -523,6 +523,158 @@
             font-size: 13px;
             color: #555;
         }
+
+        .records-controls {
+            display: flex;
+            align-items: end;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            padding: 12px;
+            background-color: #f8faff;
+            border: 1px solid #dbe5ff;
+            border-radius: 8px;
+        }
+
+        .records-controls .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 170px;
+        }
+
+        .records-controls label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .records-controls select {
+            padding: 7px 9px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            background: white;
+            font-size: 13px;
+        }
+
+        .controls-apply {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            background-color: #4c51bf;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .records-meta {
+            font-size: 13px;
+            color: #718096;
+            margin: 10px 0 14px;
+        }
+
+        .th-sort-link {
+            color: inherit;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .th-sort-link:hover {
+            text-decoration: underline;
+        }
+
+        .sort-indicator {
+            font-size: 11px;
+            color: #5a67d8;
+            font-weight: 700;
+        }
+
+        .delta-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid transparent;
+        }
+
+        .delta-positive {
+            background-color: #e9fff2;
+            color: #166534;
+            border-color: #bbf7d0;
+        }
+
+        .delta-negative {
+            background-color: #fff1f2;
+            color: #9f1239;
+            border-color: #fecdd3;
+        }
+
+        .delta-neutral {
+            background-color: #edf2f7;
+            color: #4a5568;
+            border-color: #cbd5e0;
+        }
+
+        .pagination {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .page-link,
+        .page-current {
+            min-width: 34px;
+            padding: 7px 10px;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .page-link {
+            background-color: #edf2ff;
+            color: #3f4ea0;
+            border: 1px solid #d3dcff;
+        }
+
+        .page-link:hover {
+            background-color: #dde6ff;
+        }
+
+        .page-current {
+            background-color: #4c51bf;
+            color: white;
+            border: 1px solid #4c51bf;
+        }
+
+        .page-ellipsis {
+            color: #718096;
+            font-size: 13px;
+            padding: 0 2px;
+        }
+
+        @media (max-width: 960px) {
+            .predictions-table {
+                font-size: 12px;
+            }
+
+            .predictions-table th,
+            .predictions-table td {
+                padding: 9px 7px;
+            }
+
+            .actual-input {
+                width: 110px;
+            }
+        }
         
         .empty-state {
             text-align: center;
@@ -768,9 +920,50 @@
         </div>
         
         <!-- Recent Predictions Section -->
-        {% if recent_predictions %}
         <div class="recent-predictions">
             <h3>Recent Event Records</h3>
+            <form method="GET" action="{{ url_for('dashboard') }}" class="records-controls">
+                <div class="control-group">
+                    <label for="recordsStatusFilter">Status</label>
+                    <select id="recordsStatusFilter" name="status">
+                        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All statuses</option>
+                        <option value="predicted_only" {% if status_filter == 'predicted_only' %}selected{% endif %}>Forecast Only</option>
+                        <option value="booked_confirmed" {% if status_filter == 'booked_confirmed' %}selected{% endif %}>Booked</option>
+                        <option value="needs_outcome" {% if status_filter == 'needs_outcome' %}selected{% endif %}>Needs Outcome</option>
+                        <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                        <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                        <option value="rescheduled" {% if status_filter == 'rescheduled' %}selected{% endif %}>Rescheduled</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="recordsSortBy">Sort by</label>
+                    <select id="recordsSortBy" name="sort_by">
+                        <option value="created_timestamp" {% if sort_by == 'created_timestamp' %}selected{% endif %}>Newest Created</option>
+                        <option value="event_date" {% if sort_by == 'event_date' %}selected{% endif %}>Event Date</option>
+                        <option value="predicted_revenue_per_hour" {% if sort_by == 'predicted_revenue_per_hour' %}selected{% endif %}>Predicted Revenue/Hour</option>
+                        <option value="predicted_total_revenue" {% if sort_by == 'predicted_total_revenue' %}selected{% endif %}>Predicted Total Revenue</option>
+                        <option value="actual_total_net_sales" {% if sort_by == 'actual_total_net_sales' %}selected{% endif %}>Actual Net Sales</option>
+                        <option value="predicted_vs_actual_diff" {% if sort_by == 'predicted_vs_actual_diff' %}selected{% endif %}>Prediction Delta</option>
+                        <option value="confidence_lower" {% if sort_by == 'confidence_lower' %}selected{% endif %}>Confidence Lower Bound</option>
+                        <option value="confidence_upper" {% if sort_by == 'confidence_upper' %}selected{% endif %}>Confidence Upper Bound</option>
+                        <option value="duration_hours" {% if sort_by == 'duration_hours' %}selected{% endif %}>Duration Hours</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="recordsSortDir">Direction</label>
+                    <select id="recordsSortDir" name="sort_dir">
+                        <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>Descending</option>
+                        <option value="asc" {% if sort_dir == 'asc' %}selected{% endif %}>Ascending</option>
+                    </select>
+                </div>
+                <input type="hidden" name="page" value="1">
+                <button type="submit" class="controls-apply">Apply</button>
+            </form>
+
+            <div class="records-meta">
+                Showing {{ recent_predictions|length }} of {{ total_predictions }} record{% if total_predictions != 1 %}s{% endif %} | Page {{ page }} of {{ total_pages }} | 20 per page
+            </div>
+
             {% if has_test_predictions %}
             <div class="prediction-actions">
                 <label>
@@ -786,14 +979,41 @@
                         <th></th>
                         <th>Event</th>
                         <th>Status</th>
-                        <th>Predicted Revenue/Hour</th>
-                        <th>Predicted Total Revenue</th>
-                        <th>Actual Net Sales</th>
-                        <th>Confidence Range</th>
+                        <th>
+                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='predicted_revenue_per_hour', sort_dir='asc' if sort_by != 'predicted_revenue_per_hour' or sort_dir == 'desc' else 'desc') }}">
+                                Predicted Revenue/Hour
+                                {% if sort_by == 'predicted_revenue_per_hour' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
+                            </a>
+                        </th>
+                        <th>
+                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='predicted_total_revenue', sort_dir='asc' if sort_by != 'predicted_total_revenue' or sort_dir == 'desc' else 'desc') }}">
+                                Predicted Total Revenue
+                                {% if sort_by == 'predicted_total_revenue' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
+                            </a>
+                        </th>
+                        <th>
+                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='actual_total_net_sales', sort_dir='asc' if sort_by != 'actual_total_net_sales' or sort_dir == 'desc' else 'desc') }}">
+                                Actual Net Sales
+                                {% if sort_by == 'actual_total_net_sales' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
+                            </a>
+                        </th>
+                        <th>
+                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='predicted_vs_actual_diff', sort_dir='asc' if sort_by != 'predicted_vs_actual_diff' or sort_dir == 'desc' else 'desc') }}">
+                                Prediction Delta
+                                {% if sort_by == 'predicted_vs_actual_diff' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
+                            </a>
+                        </th>
+                        <th>
+                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='confidence_lower', sort_dir='asc' if sort_by != 'confidence_lower' or sort_dir == 'desc' else 'desc') }}">
+                                Confidence Range
+                                {% if sort_by == 'confidence_lower' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
+                            </a>
+                        </th>
                         <th>Event Date</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% if recent_predictions %}
                     {% for pred in recent_predictions %}
                     <tr>
                         <td>
@@ -816,6 +1036,10 @@
                             </span>
                             <form class="status-form" method="POST" action="{{ url_for('update_prediction_status') }}">
                                 <input type="hidden" name="prediction_id" value="{{ pred.prediction_id }}">
+                                <input type="hidden" name="page" value="{{ page }}">
+                                <input type="hidden" name="status" value="{{ status_filter }}">
+                                <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                                <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                                 <select class="status-select" name="event_status">
                                     <option value="predicted_only" {% if pred.event_status == 'predicted_only' %}selected{% endif %}>Forecast Only</option>
                                     <option value="booked_confirmed" {% if pred.event_status == 'booked_confirmed' %}selected{% endif %}>Booked</option>
@@ -832,6 +1056,10 @@
                         <td>
                             <form class="actual-form" method="POST" action="{{ url_for('update_actual_net_sales') }}">
                                 <input type="hidden" name="prediction_id" value="{{ pred.prediction_id }}">
+                                <input type="hidden" name="page" value="{{ page }}">
+                                <input type="hidden" name="status" value="{{ status_filter }}">
+                                <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                                <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                                 <input
                                     class="actual-input"
                                     type="number"
@@ -847,14 +1075,74 @@
                                 <div class="actual-meta">${{ pred.actual_revenue_per_hour|round(2) }}/hr</div>
                             {% endif %}
                         </td>
+                        <td>
+                            {% if pred.predicted_vs_actual_diff is not none %}
+                                {% if pred.predicted_vs_actual_diff > 0 %}
+                                    <span class="delta-chip delta-positive">+${{ pred.predicted_vs_actual_diff|round(2) }}</span>
+                                {% elif pred.predicted_vs_actual_diff < 0 %}
+                                    <span class="delta-chip delta-negative">-${{ (-pred.predicted_vs_actual_diff)|round(2) }}</span>
+                                {% else %}
+                                    <span class="delta-chip delta-neutral">$0.00</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="delta-chip delta-neutral">Not available</span>
+                            {% endif %}
+                        </td>
                         <td>${{ pred.confidence_lower|round(2) }} - ${{ pred.confidence_upper|round(2) }}</td>
                         <td>{{ (pred.scheduled_event_date or pred.actual_updated_timestamp or pred.created_timestamp)|mdy_date }}</td>
                     </tr>
                     {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="empty-state">
+                            <div class="empty-state-icon">🔍</div>
+                            <p>No records match the current filters.</p>
+                        </td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
+
+            <div class="pagination">
+                {% if page > 1 %}
+                    <a class="page-link" href="{{ url_for('dashboard', page=page-1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Previous</a>
+                {% endif %}
+
+                {% if total_pages <= 7 %}
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == page %}
+                            <span class="page-current">{{ p }}</span>
+                        {% else %}
+                            <a class="page-link" href="{{ url_for('dashboard', page=p, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ p }}</a>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    {% if page > 3 %}
+                        <a class="page-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">1</a>
+                        {% if page > 4 %}<span class="page-ellipsis">...</span>{% endif %}
+                    {% endif %}
+
+                    {% set start_page = [1, page - 1]|max %}
+                    {% set end_page = [total_pages, page + 1]|min %}
+                    {% for p in range(start_page, end_page + 1) %}
+                        {% if p == page %}
+                            <span class="page-current">{{ p }}</span>
+                        {% else %}
+                            <a class="page-link" href="{{ url_for('dashboard', page=p, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ p }}</a>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page < total_pages - 2 %}
+                        {% if page < total_pages - 3 %}<span class="page-ellipsis">...</span>{% endif %}
+                        <a class="page-link" href="{{ url_for('dashboard', page=total_pages, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ total_pages }}</a>
+                    {% endif %}
+                {% endif %}
+
+                {% if page < total_pages %}
+                    <a class="page-link" href="{{ url_for('dashboard', page=page+1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+                {% endif %}
+            </div>
         </div>
-        {% endif %}
     </div>
 
     <footer class="app-footer">
