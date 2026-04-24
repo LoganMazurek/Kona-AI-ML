@@ -116,6 +116,51 @@
             margin-bottom: 30px;
         }
 
+        .summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .summary-header h3 {
+            color: #42526e;
+            font-size: 20px;
+        }
+
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .month-nav a {
+            text-decoration: none;
+            color: #42526e;
+            border: 1px solid #d8dee9;
+            background: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .month-nav a:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .month-label {
+            min-width: 140px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+
         .summary-card {
             background: white;
             padding: 22px;
@@ -141,6 +186,10 @@
             color: #718096;
             font-size: 13px;
             margin-top: 6px;
+        }
+
+        .summary-value.alert {
+            color: #b42318;
         }
         
         .actions-grid {
@@ -792,6 +841,7 @@
             <h2>Welcome, {{ franchise_name }}!</h2>
             <div style="margin-top: 15px;">
                 <form method="POST" action="{{ url_for('update_target') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <input type="hidden" name="month" value="{{ month_key }}">
                     <label for="target_net_sales_per_hour" style="font-weight: 600;">Target Net Sales per Hour:</label>
                     <input
                         type="number"
@@ -830,31 +880,43 @@
             </div>
         </div>
 
+        <div class="summary-header">
+            <h3>Monthly Snapshot</h3>
+            <div class="month-nav">
+                <a href="{{ url_for('dashboard', month=prev_month_key, page=1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}" aria-label="Previous month">&#8592;</a>
+                <span class="month-label">{{ month_label }}</span>
+                <a href="{{ url_for('dashboard', month=next_month_key, page=1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}" aria-label="Next month">&#8594;</a>
+            </div>
+        </div>
+
         <div class="lifecycle-summary">
             <div class="summary-card">
                 <h3>Completed Events</h3>
                 <div class="summary-value">{{ realized_count }}</div>
-                <div class="summary-detail">Included in realized performance and training</div>
+                <div class="summary-detail">Completed this month with recorded actuals</div>
             </div>
             <div class="summary-card">
-                <h3>Realized Net Sales</h3>
-                <div class="summary-value">${{ realized_total|round(2) }}</div>
-                <div class="summary-detail">Based only on completed events with actuals</div>
-            </div>
-            <div class="summary-card">
-                <h3>Forecast Only</h3>
-                <div class="summary-value">{{ forecast_count }}</div>
-                <div class="summary-detail">Predictions that are not yet confirmed bookings</div>
+                <h3>Predicted vs Realized</h3>
+                <div class="summary-value">${{ completed_predicted_total|round(2) }} vs ${{ realized_total|round(2) }}</div>
+                <div class="summary-detail">
+                    Delta:
+                    {% if realized_vs_predicted_delta >= 0 %}
+                        +${{ realized_vs_predicted_delta|round(2) }}
+                    {% else %}
+                        -${{ (-realized_vs_predicted_delta)|round(2) }}
+                    {% endif %}
+                    on completed events this month
+                </div>
             </div>
             <div class="summary-card">
                 <h3>Booked Pipeline</h3>
                 <div class="summary-value">{{ booked_count }}</div>
-                <div class="summary-detail">Booked future events waiting to happen</div>
+                <div class="summary-detail">Booked events in {{ month_label }}</div>
             </div>
             <div class="summary-card">
                 <h3>Needs Outcome</h3>
-                <div class="summary-value">{{ needs_outcome_count }}</div>
-                <div class="summary-detail">Past events still missing actual net sales</div>
+                <div class="summary-value alert">{{ needs_outcome_count }}</div>
+                <div class="summary-detail">Events in {{ month_label }} still missing actual net sales</div>
             </div>
         </div>
         
@@ -904,6 +966,7 @@
                             {% if model.model_id != default_model.model_id %}
                             <form method="POST" action="{{ url_for('select_model') }}" class="model-form">
                                 <input type="hidden" name="model_id" value="{{ model.model_id }}">
+                                <input type="hidden" name="month" value="{{ month_key }}">
                                 <button type="submit" class="select-model-btn">Select Model</button>
                             </form>
                             {% endif %}
@@ -921,8 +984,9 @@
         
         <!-- Recent Predictions Section -->
         <div class="recent-predictions" id="recentRecordsSection">
-            <h3>Recent Event Records</h3>
+            <h3>Event Records - {{ month_label }}</h3>
             <form method="GET" action="{{ url_for('dashboard') }}" class="records-controls">
+                <input type="hidden" name="month" value="{{ month_key }}">
                 <div class="control-group">
                     <label for="recordsStatusFilter">Status</label>
                     <select id="recordsStatusFilter" name="status">
@@ -980,31 +1044,31 @@
                         <th>Event</th>
                         <th>Status</th>
                         <th>
-                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='predicted_revenue_per_hour', sort_dir='asc' if sort_by != 'predicted_revenue_per_hour' or sort_dir == 'desc' else 'desc') }}">
+                            <a class="th-sort-link" href="{{ url_for('dashboard', month=month_key, page=1, status=status_filter, sort_by='predicted_revenue_per_hour', sort_dir='asc' if sort_by != 'predicted_revenue_per_hour' or sort_dir == 'desc' else 'desc') }}">
                                 Predicted Revenue/Hour
                                 {% if sort_by == 'predicted_revenue_per_hour' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
                             </a>
                         </th>
                         <th>
-                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='predicted_total_revenue', sort_dir='asc' if sort_by != 'predicted_total_revenue' or sort_dir == 'desc' else 'desc') }}">
+                            <a class="th-sort-link" href="{{ url_for('dashboard', month=month_key, page=1, status=status_filter, sort_by='predicted_total_revenue', sort_dir='asc' if sort_by != 'predicted_total_revenue' or sort_dir == 'desc' else 'desc') }}">
                                 Predicted Total Revenue
                                 {% if sort_by == 'predicted_total_revenue' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
                             </a>
                         </th>
                         <th>
-                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='actual_total_net_sales', sort_dir='asc' if sort_by != 'actual_total_net_sales' or sort_dir == 'desc' else 'desc') }}">
+                            <a class="th-sort-link" href="{{ url_for('dashboard', month=month_key, page=1, status=status_filter, sort_by='actual_total_net_sales', sort_dir='asc' if sort_by != 'actual_total_net_sales' or sort_dir == 'desc' else 'desc') }}">
                                 Actual Net Sales
                                 {% if sort_by == 'actual_total_net_sales' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
                             </a>
                         </th>
                         <th>
-                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='predicted_vs_actual_diff', sort_dir='asc' if sort_by != 'predicted_vs_actual_diff' or sort_dir == 'desc' else 'desc') }}">
+                            <a class="th-sort-link" href="{{ url_for('dashboard', month=month_key, page=1, status=status_filter, sort_by='predicted_vs_actual_diff', sort_dir='asc' if sort_by != 'predicted_vs_actual_diff' or sort_dir == 'desc' else 'desc') }}">
                                 Prediction Delta
                                 {% if sort_by == 'predicted_vs_actual_diff' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
                             </a>
                         </th>
                         <th>
-                            <a class="th-sort-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by='confidence_lower', sort_dir='asc' if sort_by != 'confidence_lower' or sort_dir == 'desc' else 'desc') }}">
+                            <a class="th-sort-link" href="{{ url_for('dashboard', month=month_key, page=1, status=status_filter, sort_by='confidence_lower', sort_dir='asc' if sort_by != 'confidence_lower' or sort_dir == 'desc' else 'desc') }}">
                                 Confidence Range
                                 {% if sort_by == 'confidence_lower' %}<span class="sort-indicator">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>{% endif %}
                             </a>
@@ -1037,6 +1101,7 @@
                             <form class="status-form" method="POST" action="{{ url_for('update_prediction_status') }}">
                                 <input type="hidden" name="prediction_id" value="{{ pred.prediction_id }}">
                                 <input type="hidden" name="page" value="{{ page }}">
+                                <input type="hidden" name="month" value="{{ month_key }}">
                                 <input type="hidden" name="status" value="{{ status_filter }}">
                                 <input type="hidden" name="sort_by" value="{{ sort_by }}">
                                 <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
@@ -1057,6 +1122,7 @@
                             <form class="actual-form" method="POST" action="{{ url_for('update_actual_net_sales') }}">
                                 <input type="hidden" name="prediction_id" value="{{ pred.prediction_id }}">
                                 <input type="hidden" name="page" value="{{ page }}">
+                                <input type="hidden" name="month" value="{{ month_key }}">
                                 <input type="hidden" name="status" value="{{ status_filter }}">
                                 <input type="hidden" name="sort_by" value="{{ sort_by }}">
                                 <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
@@ -1105,7 +1171,7 @@
 
             <div class="pagination">
                 {% if page > 1 %}
-                    <a class="page-link" href="{{ url_for('dashboard', page=page-1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Previous</a>
+                    <a class="page-link" href="{{ url_for('dashboard', month=month_key, page=page-1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Previous</a>
                 {% endif %}
 
                 {% if total_pages <= 7 %}
@@ -1113,12 +1179,12 @@
                         {% if p == page %}
                             <span class="page-current">{{ p }}</span>
                         {% else %}
-                            <a class="page-link" href="{{ url_for('dashboard', page=p, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ p }}</a>
+                            <a class="page-link" href="{{ url_for('dashboard', month=month_key, page=p, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ p }}</a>
                         {% endif %}
                     {% endfor %}
                 {% else %}
                     {% if page > 3 %}
-                        <a class="page-link" href="{{ url_for('dashboard', page=1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">1</a>
+                        <a class="page-link" href="{{ url_for('dashboard', month=month_key, page=1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">1</a>
                         {% if page > 4 %}<span class="page-ellipsis">...</span>{% endif %}
                     {% endif %}
 
@@ -1128,18 +1194,18 @@
                         {% if p == page %}
                             <span class="page-current">{{ p }}</span>
                         {% else %}
-                            <a class="page-link" href="{{ url_for('dashboard', page=p, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ p }}</a>
+                            <a class="page-link" href="{{ url_for('dashboard', month=month_key, page=p, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ p }}</a>
                         {% endif %}
                     {% endfor %}
 
                     {% if page < total_pages - 2 %}
                         {% if page < total_pages - 3 %}<span class="page-ellipsis">...</span>{% endif %}
-                        <a class="page-link" href="{{ url_for('dashboard', page=total_pages, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ total_pages }}</a>
+                        <a class="page-link" href="{{ url_for('dashboard', month=month_key, page=total_pages, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">{{ total_pages }}</a>
                     {% endif %}
                 {% endif %}
 
                 {% if page < total_pages %}
-                    <a class="page-link" href="{{ url_for('dashboard', page=page+1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+                    <a class="page-link" href="{{ url_for('dashboard', month=month_key, page=page+1, status=status_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
                 {% endif %}
             </div>
         </div>

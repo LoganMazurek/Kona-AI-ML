@@ -131,6 +131,7 @@ def _parse_positive_int(value, default=1):
 
 def _get_dashboard_state(values):
     page = _parse_positive_int(values.get('page'), default=1)
+    month_key = _normalize_dashboard_month(values.get('month'))
 
     status_filter = str(values.get('status') or 'all').strip().lower()
     if status_filter != 'all' and status_filter not in DASHBOARD_ALLOWED_STATUSES:
@@ -146,9 +147,44 @@ def _get_dashboard_state(values):
 
     return {
         'page': page,
+        'month': month_key,
         'status': status_filter,
         'sort_by': sort_by,
         'sort_dir': sort_dir,
+    }
+
+
+def _normalize_dashboard_month(value):
+    default_month = datetime.now().strftime("%Y-%m")
+    month_key = str(value or default_month).strip()
+    try:
+        datetime.strptime(month_key, "%Y-%m")
+        return month_key
+    except ValueError:
+        return default_month
+
+
+def _dashboard_month_bounds(month_key):
+    first_of_month = datetime.strptime(month_key, "%Y-%m")
+    year = first_of_month.year
+    month = first_of_month.month
+
+    if month == 12:
+        next_month = datetime(year + 1, 1, 1)
+    else:
+        next_month = datetime(year, month + 1, 1)
+
+    if month == 1:
+        prev_month = datetime(year - 1, 12, 1)
+    else:
+        prev_month = datetime(year, month - 1, 1)
+
+    return {
+        'start': first_of_month.date(),
+        'next_start': next_month.date(),
+        'label': first_of_month.strftime("%B %Y"),
+        'prev_key': prev_month.strftime("%Y-%m"),
+        'next_key': next_month.strftime("%Y-%m"),
     }
 
 
@@ -1701,9 +1737,14 @@ def dashboard():
     
     # Get available models from actual production deployment
     available_models = get_franchise_available_models(franchise['franchise_id'])
-    dashboard_stats = franchise_db.get_prediction_dashboard_stats(franchise['franchise_id'])
-    
+
     dashboard_state = _get_dashboard_state(request.args)
+    month_window = _dashboard_month_bounds(dashboard_state['month'])
+    dashboard_stats = franchise_db.get_prediction_dashboard_stats(
+        franchise['franchise_id'],
+        month_start=month_window['start'],
+        month_end_exclusive=month_window['next_start'],
+    )
 
     # Get recent predictions from database
     recent_predictions, total_predictions = franchise_db.get_recent_predictions_page(
@@ -1713,6 +1754,8 @@ def dashboard():
         status_filter=dashboard_state['status'],
         sort_by=dashboard_state['sort_by'],
         sort_dir=dashboard_state['sort_dir'],
+        month_start=month_window['start'],
+        month_end_exclusive=month_window['next_start'],
     )
 
     total_pages = max(1, (total_predictions + DASHBOARD_PAGE_SIZE - 1) // DASHBOARD_PAGE_SIZE)
@@ -1720,6 +1763,7 @@ def dashboard():
         return redirect(url_for(
             'dashboard',
             page=total_pages,
+            month=dashboard_state['month'],
             status=dashboard_state['status'],
             sort_by=dashboard_state['sort_by'],
             sort_dir=dashboard_state['sort_dir'],
@@ -1752,12 +1796,18 @@ def dashboard():
                           recent_predictions=recent_predictions,
                           realized_count=dashboard_stats['realized_count'],
                           realized_total=dashboard_stats['realized_total'],
+                          completed_predicted_total=dashboard_stats['completed_predicted_total'],
+                          realized_vs_predicted_delta=dashboard_stats['realized_vs_predicted_delta'],
                           forecast_count=dashboard_stats['forecast_count'],
                           booked_count=dashboard_stats['booked_count'],
                           needs_outcome_count=dashboard_stats['needs_outcome_count'],
                           target_net_sales_per_hour=franchise.get('target_net_sales_per_hour'),
                           has_test_predictions=has_test_predictions,
                           page=dashboard_state['page'],
+                          month_key=dashboard_state['month'],
+                          month_label=month_window['label'],
+                          prev_month_key=month_window['prev_key'],
+                          next_month_key=month_window['next_key'],
                           page_size=DASHBOARD_PAGE_SIZE,
                           total_pages=total_pages,
                           total_predictions=total_predictions,
@@ -1840,19 +1890,20 @@ def select_model():
     """Update the franchise's default model."""
     franchise = get_current_franchise()
     model_id = request.form.get('model_id', '').strip()
+    month_key = _normalize_dashboard_month(request.form.get('month'))
     
     if not model_id:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', month=month_key))
     
     # Verify model is actually available
     available_models = get_franchise_available_models(franchise['franchise_id'])
     if not any(m['model_id'] == model_id for m in available_models):
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', month=month_key))
     
     # Update default model in database
     franchise_db.update_franchise_default_model(franchise['franchise_id'], model_id)
     
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('dashboard', month=month_key))
 
 
 @app.route('/update-target', methods=['POST'])
@@ -1861,17 +1912,18 @@ def update_target():
     """Update franchise target net sales per hour."""
     franchise = get_current_franchise()
     target_value = request.form.get('target_net_sales_per_hour', '').strip()
+    month_key = _normalize_dashboard_month(request.form.get('month'))
 
     try:
         target_float = float(target_value)
     except (TypeError, ValueError):
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', month=month_key))
 
     if target_float <= 0:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', month=month_key))
 
     franchise_db.update_franchise_target(franchise['franchise_id'], target_float)
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('dashboard', month=month_key))
 
 
 @app.route('/')

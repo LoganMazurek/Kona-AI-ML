@@ -479,6 +479,8 @@ class FranchiseDatabase:
         status_filter: str = 'all',
         sort_by: str = 'created_timestamp',
         sort_dir: str = 'desc',
+        month_start=None,
+        month_end_exclusive=None,
     ) -> Tuple[List[Dict], int]:
         """Get paginated recent predictions for a franchise with filtering and sorting."""
         safe_page = max(1, int(page or 1))
@@ -526,8 +528,16 @@ class FranchiseDatabase:
         sort_column = sort_column_map.get(safe_sort_by, 'created_timestamp')
         safe_sort_dir = 'asc' if str(sort_dir or '').strip().lower() == 'asc' else 'desc'
 
+        event_date_expr = "COALESCE(date(NULLIF(scheduled_event_date, '')), date(actual_updated_timestamp), date(created_timestamp))"
+
         where_clause = 'WHERE franchise_id = ?'
         where_params: List = [franchise_id]
+
+        if month_start and month_end_exclusive:
+            where_clause += f' AND {event_date_expr} >= ? AND {event_date_expr} < ?'
+            where_params.append(str(month_start))
+            where_params.append(str(month_end_exclusive))
+
         if normalized_status_filter != 'all':
             where_clause += ' AND event_status = ?'
             where_params.append(normalized_status_filter)
@@ -566,12 +576,22 @@ class FranchiseDatabase:
 
         return [dict(row) for row in rows], total_count
 
-    def get_prediction_dashboard_stats(self, franchise_id: str) -> Dict[str, float]:
-        """Return full-history lifecycle and realized performance stats for the dashboard."""
+    def get_prediction_dashboard_stats(self, franchise_id: str, month_start=None,
+                                       month_end_exclusive=None) -> Dict[str, float]:
+        """Return month-scoped lifecycle and completed-event realized vs predicted stats."""
         conn = self.get_connection()
         cursor = conn.cursor()
+
+        event_date_expr = "COALESCE(date(NULLIF(scheduled_event_date, '')), date(actual_updated_timestamp), date(created_timestamp))"
+        where_clause = 'franchise_id = ?'
+        params: List = [franchise_id]
+        if month_start and month_end_exclusive:
+            where_clause += f' AND {event_date_expr} >= ? AND {event_date_expr} < ?'
+            params.append(str(month_start))
+            params.append(str(month_end_exclusive))
+
         cursor.execute(
-            '''
+            f'''
             SELECT
                 COUNT(CASE
                     WHEN is_test = 0
@@ -583,6 +603,11 @@ class FranchiseDatabase:
                      AND event_status = 'completed'
                      AND actual_total_net_sales IS NOT NULL
                     THEN actual_total_net_sales ELSE 0 END), 0) AS realized_total,
+                COALESCE(SUM(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'completed'
+                     AND actual_total_net_sales IS NOT NULL
+                    THEN predicted_total_revenue ELSE 0 END), 0) AS completed_predicted_total,
                 COUNT(CASE
                     WHEN is_test = 0
                      AND event_status = 'predicted_only'
@@ -596,9 +621,9 @@ class FranchiseDatabase:
                      AND event_status = 'needs_outcome'
                     THEN 1 END) AS needs_outcome_count
             FROM predictions
-            WHERE franchise_id = ?
+            WHERE {where_clause}
             ''',
-            (franchise_id,)
+            tuple(params)
         )
         row = cursor.fetchone()
         conn.close()
@@ -607,14 +632,21 @@ class FranchiseDatabase:
             return {
                 'realized_count': 0,
                 'realized_total': 0.0,
+                'completed_predicted_total': 0.0,
+                'realized_vs_predicted_delta': 0.0,
                 'forecast_count': 0,
                 'booked_count': 0,
                 'needs_outcome_count': 0,
             }
 
+        realized_total = float(row['realized_total'] or 0.0)
+        completed_predicted_total = float(row['completed_predicted_total'] or 0.0)
+
         return {
             'realized_count': int(row['realized_count'] or 0),
-            'realized_total': float(row['realized_total'] or 0.0),
+            'realized_total': realized_total,
+            'completed_predicted_total': completed_predicted_total,
+            'realized_vs_predicted_delta': realized_total - completed_predicted_total,
             'forecast_count': int(row['forecast_count'] or 0),
             'booked_count': int(row['booked_count'] or 0),
             'needs_outcome_count': int(row['needs_outcome_count'] or 0),
