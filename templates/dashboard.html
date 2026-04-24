@@ -920,7 +920,7 @@
         </div>
         
         <!-- Recent Predictions Section -->
-        <div class="recent-predictions">
+        <div class="recent-predictions" id="recentRecordsSection">
             <h3>Recent Event Records</h3>
             <form method="GET" action="{{ url_for('dashboard') }}" class="records-controls">
                 <div class="control-group">
@@ -1202,42 +1202,118 @@
         </div>
     </div>
     <script>
-        const selectAll = document.getElementById('selectAllTests');
-        const deleteButton = document.getElementById('deleteTestPredictions');
+        const RECENT_SECTION_ID = 'recentRecordsSection';
 
-        const updateDeleteButton = () => {
+        function getRecentSection() {
+            return document.getElementById(RECENT_SECTION_ID);
+        }
+
+        function updateDeleteButtonState() {
+            const section = getRecentSection();
+            if (!section) {
+                return;
+            }
+
+            const deleteButton = section.querySelector('#deleteTestPredictions');
             if (!deleteButton) {
                 return;
             }
-            const anyChecked = Array.from(document.querySelectorAll('.test-select'))
+
+            const anyChecked = Array.from(section.querySelectorAll('.test-select'))
                 .some((input) => input.checked);
             deleteButton.disabled = !anyChecked;
-        };
-
-        if (selectAll) {
-            selectAll.addEventListener('change', (event) => {
-                const checked = event.target.checked;
-                document.querySelectorAll('.test-select').forEach((input) => {
-                    input.checked = checked;
-                });
-                updateDeleteButton();
-            });
         }
 
-        document.querySelectorAll('.test-select').forEach((input) => {
-            input.addEventListener('change', () => {
-                if (selectAll) {
-                    const allChecked = Array.from(document.querySelectorAll('.test-select'))
-                        .every((checkbox) => checkbox.checked);
-                    selectAll.checked = allChecked;
+        function syncSelectAllState() {
+            const section = getRecentSection();
+            if (!section) {
+                return;
+            }
+
+            const selectAll = section.querySelector('#selectAllTests');
+            if (!selectAll) {
+                return;
+            }
+
+            const checkboxes = Array.from(section.querySelectorAll('.test-select'));
+            selectAll.checked = checkboxes.length > 0 && checkboxes.every((checkbox) => checkbox.checked);
+        }
+
+        async function replaceRecentSectionFromResponse(response) {
+            const html = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const nextSection = doc.getElementById(RECENT_SECTION_ID);
+            const currentSection = getRecentSection();
+
+            if (nextSection && currentSection) {
+                currentSection.replaceWith(nextSection);
+                syncSelectAllState();
+                updateDeleteButtonState();
+                return true;
+            }
+
+            return false;
+        }
+
+        async function refreshRecentSection(url, options = {}) {
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    ...(options.headers || {}),
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
-                updateDeleteButton();
             });
+
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+
+            const replaced = await replaceRecentSectionFromResponse(response);
+            if (!replaced) {
+                window.location.href = response.url || url;
+            }
+        }
+
+        document.addEventListener('submit', async (event) => {
+            const section = getRecentSection();
+            const form = event.target;
+
+            if (!section || !(form instanceof HTMLFormElement) || !section.contains(form)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const method = (form.method || 'GET').toUpperCase();
+            const action = form.action || window.location.href;
+
+            try {
+                if (method === 'GET') {
+                    const params = new URLSearchParams(new FormData(form));
+                    const url = `${action}${action.includes('?') ? '&' : '?'}${params.toString()}`;
+                    await refreshRecentSection(url, { method: 'GET' });
+                } else {
+                    await refreshRecentSection(action, {
+                        method,
+                        body: new FormData(form)
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to update recent records section', error);
+                window.location.href = action;
+            }
         });
 
-        if (deleteButton) {
-            deleteButton.addEventListener('click', async () => {
-                const selected = Array.from(document.querySelectorAll('.test-select'))
+        document.addEventListener('click', async (event) => {
+            const section = getRecentSection();
+            if (!section) {
+                return;
+            }
+
+            const deleteButton = event.target.closest('#deleteTestPredictions');
+            if (deleteButton && section.contains(deleteButton)) {
+                const selected = Array.from(section.querySelectorAll('.test-select'))
                     .filter((input) => input.checked)
                     .map((input) => input.value);
 
@@ -1249,21 +1325,67 @@
                     return;
                 }
 
-                const response = await fetch('/predictions/delete-tests', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ prediction_ids: selected })
-                });
+                try {
+                    const response = await fetch('/predictions/delete-tests', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({ prediction_ids: selected })
+                    });
 
-                if (response.ok) {
+                    if (!response.ok) {
+                        throw new Error(`Delete failed with status ${response.status}`);
+                    }
+
+                    const params = new URLSearchParams(window.location.search);
+                    const refreshUrl = `${window.location.pathname}?${params.toString()}`;
+                    await refreshRecentSection(refreshUrl, { method: 'GET' });
+                } catch (error) {
+                    console.error('Failed to delete test predictions', error);
                     window.location.reload();
                 }
-            });
-        }
+                return;
+            }
 
-        updateDeleteButton();
+            const link = event.target.closest('a.page-link, a.th-sort-link');
+            if (!link || !section.contains(link)) {
+                return;
+            }
+
+            event.preventDefault();
+            try {
+                await refreshRecentSection(link.href, { method: 'GET' });
+            } catch (error) {
+                console.error('Failed to navigate recent records section', error);
+                window.location.href = link.href;
+            }
+        });
+
+        document.addEventListener('change', (event) => {
+            const section = getRecentSection();
+            if (!section || !section.contains(event.target)) {
+                return;
+            }
+
+            if (event.target.id === 'selectAllTests') {
+                const checked = event.target.checked;
+                section.querySelectorAll('.test-select').forEach((input) => {
+                    input.checked = checked;
+                });
+                updateDeleteButtonState();
+                return;
+            }
+
+            if (event.target.classList.contains('test-select')) {
+                syncSelectAllState();
+                updateDeleteButtonState();
+            }
+        });
+
+        syncSelectAllState();
+        updateDeleteButtonState();
     </script>
     <script>
         const creditsModal = document.getElementById('creditsModal');
