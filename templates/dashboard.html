@@ -109,6 +109,60 @@
             font-size: 16px;
         }
 
+        .top-settings {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .target-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .target-inline-note {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .settings-disclosure {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #f8faff;
+            padding: 10px 12px;
+        }
+
+        .settings-disclosure summary {
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        .settings-disclosure summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .settings-disclosure summary::after {
+            content: '▾';
+            color: #667eea;
+            font-size: 14px;
+        }
+
+        .settings-disclosure[open] summary::after {
+            content: '▴';
+        }
+
+        .settings-content {
+            margin-top: 10px;
+        }
+
         .lifecycle-summary {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -186,6 +240,11 @@
             color: #718096;
             font-size: 13px;
             margin-top: 6px;
+        }
+
+        .summary-detail-delta {
+            font-weight: 700;
+            color: #2d3748;
         }
 
         .summary-value.alert {
@@ -839,8 +898,8 @@
         <!-- Welcome Section -->
         <div class="welcome-section">
             <h2>Welcome, {{ franchise_name }}!</h2>
-            <div style="margin-top: 15px;">
-                <form method="POST" action="{{ url_for('update_target') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+            <div class="top-settings">
+                <form method="POST" action="{{ url_for('update_target') }}" class="target-form">
                     <input type="hidden" name="month" value="{{ month_key }}">
                     <label for="target_net_sales_per_hour" style="font-weight: 600;">Target Net Sales per Hour:</label>
                     <input
@@ -855,9 +914,77 @@
                     />
                     <button type="submit" class="select-model-btn">Save Target</button>
                     {% if target_net_sales_per_hour %}
-                        <span style="color: #666; font-size: 14px;">Current: ${{ target_net_sales_per_hour }}/hour</span>
+                        <span class="target-inline-note">Target: ${{ target_net_sales_per_hour }}/hour</span>
+                    {% endif %}
+                    {% if monthly_actual_net_sales_per_hour is not none %}
+                        <span class="target-inline-note">Actual this month: ${{ monthly_actual_net_sales_per_hour|round(2) }}/hour</span>
+                    {% else %}
+                        <span class="target-inline-note">Actual this month: N/A</span>
                     {% endif %}
                 </form>
+
+                <details class="settings-disclosure">
+                    <summary>Model Selection</summary>
+                    <div class="settings-content">
+                        <div class="model-list">
+                            {% if models %}
+                                {% for model in models %}
+                                <div class="model-item {% if default_model and model.model_id == default_model.model_id %}default{% endif %}">
+                                    <div class="model-info">
+                                        <h4>{{ model.model_name }}</h4>
+                                        <div class="model-details">
+                                            <strong>Type:</strong> {{ model.model_type or 'Unknown' }} |
+                                            <strong>Accuracy:</strong> ±${% if model.cv_mae is not none %}{{ model.cv_mae|round(2) }}{% else %}N/A{% endif %}/hr |
+                                            <strong>Features:</strong> {{ model.feature_count or 'N/A' }} |
+                                            <strong>Trained:</strong> {% if model.training_date %}{{ model.training_date|mdy_date }}{% else %}N/A{% endif %}
+                                            {% if default_model and model.model_id == default_model.model_id %}
+                                            <span class="default-badge">✓ Current</span>
+                                            {% endif %}
+                                            <div class="tag-list">
+                                                {% if model.model_type == 'ensemble' %}
+                                                    <span class="tag tag-positive">Balanced performance</span>
+                                                    <span class="tag tag-neutral">Lower variance</span>
+                                                {% elif model.model_type == 'individual' %}
+                                                    <span class="tag tag-positive">Faster predictions</span>
+                                                    <span class="tag tag-caution">More variance</span>
+                                                {% elif model.model_type == 'franchise_specific' %}
+                                                    <span class="tag tag-positive">Tailored to your data</span>
+                                                    <span class="tag tag-caution">Less generalizable</span>
+                                                {% else %}
+                                                    <span class="tag tag-neutral">Standard baseline</span>
+                                                {% endif %}
+                                                {% if model.cv_mae is not none %}
+                                                    {% if model.cv_mae <= 200 %}
+                                                        <span class="tag tag-positive">Tight error band</span>
+                                                    {% elif model.cv_mae <= 350 %}
+                                                        <span class="tag tag-neutral">Moderate error band</span>
+                                                    {% else %}
+                                                        <span class="tag tag-caution">Wide error band</span>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="model-actions">
+                                        {% if not default_model or model.model_id != default_model.model_id %}
+                                        <form method="POST" action="{{ url_for('select_model') }}" class="model-form">
+                                            <input type="hidden" name="model_id" value="{{ model.model_id }}">
+                                            <input type="hidden" name="month" value="{{ month_key }}">
+                                            <button type="submit" class="select-model-btn">Select Model</button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📋</div>
+                                <p>No models available for your franchise</p>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </details>
             </div>
         </div>
         
@@ -897,14 +1024,20 @@
             </div>
             <div class="summary-card">
                 <h3>Predicted vs Realized</h3>
-                <div class="summary-value">${{ completed_predicted_total|round(2) }} vs ${{ realized_total|round(2) }}</div>
+                <div class="summary-value">{{ completed_predicted_total|compact_currency }} vs {{ realized_total|compact_currency }}</div>
                 <div class="summary-detail">
-                    Delta:
+                    <span class="summary-detail-delta">Delta:
                     {% if realized_vs_predicted_delta >= 0 %}
-                        +${{ realized_vs_predicted_delta|round(2) }}
+                        +{{ realized_vs_predicted_delta|compact_currency|replace('-', '') }}
                     {% else %}
-                        -${{ (-realized_vs_predicted_delta)|round(2) }}
+                        -{{ (-realized_vs_predicted_delta)|compact_currency|replace('-', '') }}
                     {% endif %}
+                    {% if realized_vs_predicted_pct is not none %}
+                        ({{ '%+.1f'|format(realized_vs_predicted_pct) }}%)
+                    {% else %}
+                        (N/A)
+                    {% endif %}
+                    </span>
                     on completed events this month
                 </div>
             </div>
@@ -917,68 +1050,6 @@
                 <h3>Needs Outcome</h3>
                 <div class="summary-value alert">{{ needs_outcome_count }}</div>
                 <div class="summary-detail">Events in {{ month_label }} still missing actual net sales</div>
-            </div>
-        </div>
-        
-        <!-- Model Selection Section -->
-        <div class="model-section">
-            <h3>Available Models</h3>
-            <div class="model-list">
-                {% if models %}
-                    {% for model in models %}
-                    <div class="model-item {% if model.model_id == default_model.model_id %}default{% endif %}">
-                        <div class="model-info">
-                            <h4>{{ model.model_name }}</h4>
-                            <div class="model-details">
-                                <strong>Type:</strong> {{ model.model_type or 'Unknown' }} | 
-                                <strong>Accuracy:</strong> ±${% if model.cv_mae is not none %}{{ model.cv_mae|round(2) }}{% else %}N/A{% endif %}/hr | 
-                                <strong>Features:</strong> {{ model.feature_count or 'N/A' }} | 
-                                <strong>Trained:</strong> {% if model.training_date %}{{ model.training_date|mdy_date }}{% else %}N/A{% endif %}
-                                {% if model.model_id == default_model.model_id %}
-                                <span class="default-badge">✓ Current</span>
-                                {% endif %}
-                                <div class="tag-list">
-                                    {% if model.model_type == 'ensemble' %}
-                                        <span class="tag tag-positive">Balanced performance</span>
-                                        <span class="tag tag-neutral">Lower variance</span>
-                                    {% elif model.model_type == 'individual' %}
-                                        <span class="tag tag-positive">Faster predictions</span>
-                                        <span class="tag tag-caution">More variance</span>
-                                    {% elif model.model_type == 'franchise_specific' %}
-                                        <span class="tag tag-positive">Tailored to your data</span>
-                                        <span class="tag tag-caution">Less generalizable</span>
-                                    {% else %}
-                                        <span class="tag tag-neutral">Standard baseline</span>
-                                    {% endif %}
-                                    {% if model.cv_mae is not none %}
-                                        {% if model.cv_mae <= 200 %}
-                                            <span class="tag tag-positive">Tight error band</span>
-                                        {% elif model.cv_mae <= 350 %}
-                                            <span class="tag tag-neutral">Moderate error band</span>
-                                        {% else %}
-                                            <span class="tag tag-caution">Wide error band</span>
-                                        {% endif %}
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="model-actions">
-                            {% if model.model_id != default_model.model_id %}
-                            <form method="POST" action="{{ url_for('select_model') }}" class="model-form">
-                                <input type="hidden" name="model_id" value="{{ model.model_id }}">
-                                <input type="hidden" name="month" value="{{ month_key }}">
-                                <button type="submit" class="select-model-btn">Select Model</button>
-                            </form>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                <div class="empty-state">
-                    <div class="empty-state-icon">📋</div>
-                    <p>No models available for your franchise</p>
-                </div>
-                {% endif %}
             </div>
         </div>
         

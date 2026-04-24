@@ -225,6 +225,25 @@ def mdy_date(value):
         return value or ""
     return parsed.strftime(DATE_DISPLAY_FORMAT)
 
+
+@app.template_filter("compact_currency")
+def compact_currency(value):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "$0"
+
+    sign = "-" if amount < 0 else ""
+    absolute = abs(amount)
+
+    if absolute >= 1_000_000_000:
+        return f"{sign}${absolute / 1_000_000_000:.2f}B"
+    if absolute >= 1_000_000:
+        return f"{sign}${absolute / 1_000_000:.2f}M"
+    if absolute >= 1_000:
+        return f"{sign}${absolute / 1_000:.1f}K"
+    return f"{sign}${absolute:,.2f}"
+
 # Security configuration for sessions
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
@@ -1798,6 +1817,8 @@ def dashboard():
                           realized_total=dashboard_stats['realized_total'],
                           completed_predicted_total=dashboard_stats['completed_predicted_total'],
                           realized_vs_predicted_delta=dashboard_stats['realized_vs_predicted_delta'],
+                          realized_vs_predicted_pct=dashboard_stats['realized_vs_predicted_pct'],
+                          monthly_actual_net_sales_per_hour=dashboard_stats['monthly_actual_net_sales_per_hour'],
                           forecast_count=dashboard_stats['forecast_count'],
                           booked_count=dashboard_stats['booked_count'],
                           needs_outcome_count=dashboard_stats['needs_outcome_count'],

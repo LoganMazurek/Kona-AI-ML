@@ -577,7 +577,7 @@ class FranchiseDatabase:
         return [dict(row) for row in rows], total_count
 
     def get_prediction_dashboard_stats(self, franchise_id: str, month_start=None,
-                                       month_end_exclusive=None) -> Dict[str, float]:
+                                       month_end_exclusive=None) -> Dict[str, object]:
         """Return month-scoped lifecycle and completed-event realized vs predicted stats."""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -608,6 +608,13 @@ class FranchiseDatabase:
                      AND event_status = 'completed'
                      AND actual_total_net_sales IS NOT NULL
                     THEN predicted_total_revenue ELSE 0 END), 0) AS completed_predicted_total,
+                COALESCE(SUM(CASE
+                    WHEN is_test = 0
+                     AND event_status = 'completed'
+                     AND actual_total_net_sales IS NOT NULL
+                     AND duration_hours IS NOT NULL
+                     AND duration_hours > 0
+                    THEN duration_hours ELSE 0 END), 0) AS completed_duration_hours,
                 COUNT(CASE
                     WHEN is_test = 0
                      AND event_status = 'predicted_only'
@@ -634,6 +641,8 @@ class FranchiseDatabase:
                 'realized_total': 0.0,
                 'completed_predicted_total': 0.0,
                 'realized_vs_predicted_delta': 0.0,
+                'realized_vs_predicted_pct': None,
+                'monthly_actual_net_sales_per_hour': None,
                 'forecast_count': 0,
                 'booked_count': 0,
                 'needs_outcome_count': 0,
@@ -641,12 +650,22 @@ class FranchiseDatabase:
 
         realized_total = float(row['realized_total'] or 0.0)
         completed_predicted_total = float(row['completed_predicted_total'] or 0.0)
+        completed_duration_hours = float(row['completed_duration_hours'] or 0.0)
+        realized_vs_predicted_pct = None
+        if completed_predicted_total != 0:
+            realized_vs_predicted_pct = ((realized_total - completed_predicted_total) / completed_predicted_total) * 100
+
+        monthly_actual_net_sales_per_hour = None
+        if completed_duration_hours > 0:
+            monthly_actual_net_sales_per_hour = realized_total / completed_duration_hours
 
         return {
             'realized_count': int(row['realized_count'] or 0),
             'realized_total': realized_total,
             'completed_predicted_total': completed_predicted_total,
             'realized_vs_predicted_delta': realized_total - completed_predicted_total,
+            'realized_vs_predicted_pct': realized_vs_predicted_pct,
+            'monthly_actual_net_sales_per_hour': monthly_actual_net_sales_per_hour,
             'forecast_count': int(row['forecast_count'] or 0),
             'booked_count': int(row['booked_count'] or 0),
             'needs_outcome_count': int(row['needs_outcome_count'] or 0),
