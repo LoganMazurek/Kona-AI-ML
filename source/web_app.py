@@ -83,6 +83,29 @@ DATE_DISPLAY_FORMAT = "%m/%d/%Y"
 REALIZED_EVENT_STATUSES = {'completed'}
 PIPELINE_EVENT_STATUSES = {'booked_confirmed', 'needs_outcome'}
 FORECAST_EVENT_STATUSES = {'predicted_only'}
+DASHBOARD_PAGE_SIZE = 20
+DASHBOARD_ALLOWED_STATUSES = {
+    'predicted_only',
+    'booked_confirmed',
+    'needs_outcome',
+    'completed',
+    'cancelled',
+    'rescheduled',
+}
+DASHBOARD_SORT_FIELDS = {
+    'created_timestamp',
+    'event_name',
+    'event_status',
+    'event_date',
+    'predicted_revenue_per_hour',
+    'predicted_total_revenue',
+    'actual_total_net_sales',
+    'predicted_vs_actual_diff',
+    'actual_revenue_per_hour',
+    'confidence_lower',
+    'confidence_upper',
+    'duration_hours',
+}
 
 
 def _normalize_event_status(value, default='predicted_only'):
@@ -96,6 +119,37 @@ def _normalize_event_status(value, default='predicted_only'):
     }
     status = str(value or '').strip().lower()
     return status if status in allowed_statuses else default
+
+
+def _parse_positive_int(value, default=1):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _get_dashboard_state(values):
+    page = _parse_positive_int(values.get('page'), default=1)
+
+    status_filter = str(values.get('status') or 'all').strip().lower()
+    if status_filter != 'all' and status_filter not in DASHBOARD_ALLOWED_STATUSES:
+        status_filter = 'all'
+
+    sort_by = str(values.get('sort_by') or 'created_timestamp').strip().lower()
+    if sort_by not in DASHBOARD_SORT_FIELDS:
+        sort_by = 'created_timestamp'
+
+    sort_dir = str(values.get('sort_dir') or 'desc').strip().lower()
+    if sort_dir not in {'asc', 'desc'}:
+        sort_dir = 'desc'
+
+    return {
+        'page': page,
+        'status': status_filter,
+        'sort_by': sort_by,
+        'sort_dir': sort_dir,
+    }
 
 
 def _try_parse_datetime(value):
@@ -1649,11 +1703,37 @@ def dashboard():
     available_models = get_franchise_available_models(franchise['franchise_id'])
     dashboard_stats = franchise_db.get_prediction_dashboard_stats(franchise['franchise_id'])
     
+    dashboard_state = _get_dashboard_state(request.args)
+
     # Get recent predictions from database
-    recent_predictions = franchise_db.get_recent_predictions(franchise['franchise_id'], limit=50)
+    recent_predictions, total_predictions = franchise_db.get_recent_predictions_page(
+        franchise['franchise_id'],
+        page=dashboard_state['page'],
+        page_size=DASHBOARD_PAGE_SIZE,
+        status_filter=dashboard_state['status'],
+        sort_by=dashboard_state['sort_by'],
+        sort_dir=dashboard_state['sort_dir'],
+    )
+
+    total_pages = max(1, (total_predictions + DASHBOARD_PAGE_SIZE - 1) // DASHBOARD_PAGE_SIZE)
+    if dashboard_state['page'] > total_pages and total_predictions > 0:
+        return redirect(url_for(
+            'dashboard',
+            page=total_pages,
+            status=dashboard_state['status'],
+            sort_by=dashboard_state['sort_by'],
+            sort_dir=dashboard_state['sort_dir'],
+        ))
+
     has_test_predictions = any(pred.get('is_test') for pred in recent_predictions)
     for pred in recent_predictions:
         pred['event_status'] = _normalize_event_status(pred.get('event_status'))
+        actual_value = pred.get('actual_total_net_sales')
+        predicted_total = pred.get('predicted_total_revenue')
+        if actual_value is None or predicted_total is None:
+            pred['predicted_vs_actual_diff'] = None
+        else:
+            pred['predicted_vs_actual_diff'] = float(predicted_total) - float(actual_value)
     
     # Try to get default model from database, fallback to first available
     default_model_id = franchise.get('default_model_id')
@@ -1676,7 +1756,14 @@ def dashboard():
                           booked_count=dashboard_stats['booked_count'],
                           needs_outcome_count=dashboard_stats['needs_outcome_count'],
                           target_net_sales_per_hour=franchise.get('target_net_sales_per_hour'),
-                          has_test_predictions=has_test_predictions)
+                          has_test_predictions=has_test_predictions,
+                          page=dashboard_state['page'],
+                          page_size=DASHBOARD_PAGE_SIZE,
+                          total_pages=total_pages,
+                          total_predictions=total_predictions,
+                          status_filter=dashboard_state['status'],
+                          sort_by=dashboard_state['sort_by'],
+                          sort_dir=dashboard_state['sort_dir'])
 
 
 @app.route('/predictions/update-actual', methods=['POST'])
@@ -1686,16 +1773,18 @@ def update_actual_net_sales():
     prediction_id = request.form.get('prediction_id', '').strip()
     actual_str = request.form.get('actual_total_net_sales', '').strip()
 
+    dashboard_state = _get_dashboard_state(request.form)
+
     if not prediction_id or not actual_str:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', **dashboard_state))
 
     try:
         actual_total = float(actual_str)
     except ValueError:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', **dashboard_state))
 
     if actual_total < 0:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', **dashboard_state))
 
     franchise_db.update_actual_net_sales(
         get_current_franchise_id(),
@@ -1703,7 +1792,7 @@ def update_actual_net_sales():
         actual_total
     )
 
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('dashboard', **dashboard_state))
 
 
 @app.route('/predictions/update-status', methods=['POST'])
@@ -1713,8 +1802,10 @@ def update_prediction_status():
     prediction_id = request.form.get('prediction_id', '').strip()
     event_status = _normalize_event_status(request.form.get('event_status'))
 
+    dashboard_state = _get_dashboard_state(request.form)
+
     if not prediction_id:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard', **dashboard_state))
 
     franchise_db.update_prediction_status(
         get_current_franchise_id(),
@@ -1722,7 +1813,7 @@ def update_prediction_status():
         event_status,
         include_in_training=False,
     )
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('dashboard', **dashboard_state))
 
 
 @app.route('/predictions/delete-tests', methods=['POST'])
