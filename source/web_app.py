@@ -2384,11 +2384,12 @@ def bulk_upload_page():
             )
 
         pending_dir = os.path.realpath(os.path.join(tempfile.gettempdir(), 'kona_pending_uploads'))
-        expected_name = f'{pending_token}_{franchise_id}.tmp'
-        pending_path = os.path.realpath(
-            os.path.join(pending_dir, expected_name)
-        )
-        if os.path.commonpath([pending_dir, pending_path]) != pending_dir:
+        franchise_id_safe = str(franchise_id)
+        expected_name = f'{pending_token}_{franchise_id_safe}.tmp'
+        candidate_path = os.path.join(pending_dir, expected_name)
+        pending_path = os.path.realpath(candidate_path)
+        expected_path = os.path.join(pending_dir, expected_name)
+        if os.path.commonpath([pending_dir, pending_path]) != pending_dir or pending_path != expected_path:
             return render_template(
                 'bulk_upload.html',
                 recent_uploads=recent_uploads,
