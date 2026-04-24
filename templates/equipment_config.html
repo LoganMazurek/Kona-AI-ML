@@ -284,15 +284,10 @@
         </div>
 
         <div id="success-message" class="success-message"></div>
+        <div id="error-message" class="success-message" style="background:#fef2f2;border-color:#fca5a5;color:#dc2626;"></div>
 
         <h2>Add Equipment Mapping</h2>
         <form id="equipment-form" class="equipment-form">
-            <div class="form-group">
-                <label for="franchise-name">Franchise Name</label>
-                <input type="text" id="franchise-name" required 
-                       placeholder="e.g., CentralNaperville">
-                <div class="help-text">Your franchise identifier</div>
-            </div>
 
             <div class="form-group">
                 <label for="equipment-name">Equipment Name</label>
@@ -389,89 +384,90 @@
     </div>
 
     <script>
-        // Simulated equipment storage (in production, this would use a backend API)
-        let equipmentConfig = JSON.parse(localStorage.getItem('equipmentConfig') || '{}');
+        // Load equipment mappings from the server on page load.
+        async function loadMappings() {
+            try {
+                const resp = await fetch('/api/equipment-mappings');
+                if (!resp.ok) throw new Error('Failed to load');
+                const data = await resp.json();
+                renderEquipmentList(data.mappings || []);
+            } catch (e) {
+                showError('Could not load equipment mappings: ' + e.message);
+            }
+        }
 
-        // Load existing equipment on page load
-        renderEquipmentList();
-
-        document.getElementById('equipment-form').addEventListener('submit', function(e) {
+        document.getElementById('equipment-form').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            const franchiseName = document.getElementById('franchise-name').value.trim();
             const equipmentName = document.getElementById('equipment-name').value.trim();
             const equipmentType = document.getElementById('equipment-type').value;
             const notes = document.getElementById('notes').value.trim();
 
-            // Store configuration
-            if (!equipmentConfig[franchiseName]) {
-                equipmentConfig[franchiseName] = [];
+            try {
+                const resp = await fetch('/api/equipment-mappings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ equipment_name: equipmentName, equipment_type: equipmentType, notes }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Save failed');
+                showSuccessMessage(`\u2713 Saved: ${equipmentName} \u2192 ${equipmentType}`);
+                document.getElementById('equipment-name').value = '';
+                document.getElementById('equipment-type').value = '';
+                document.getElementById('notes').value = '';
+                loadMappings();
+            } catch (e) {
+                showError('Could not save: ' + e.message);
             }
-
-            equipmentConfig[franchiseName].push({
-                name: equipmentName,
-                type: equipmentType,
-                notes: notes,
-                timestamp: new Date().toISOString()
-            });
-
-            // Save to localStorage (in production, send to backend)
-            localStorage.setItem('equipmentConfig', JSON.stringify(equipmentConfig));
-
-            // Show success message
-            showSuccessMessage(`✓ Added: ${equipmentName} → ${equipmentType}`);
-
-            // Clear form
-            document.getElementById('equipment-name').value = '';
-            document.getElementById('equipment-type').value = '';
-            document.getElementById('notes').value = '';
-
-            // Re-render list
-            renderEquipmentList();
         });
 
-        function renderEquipmentList() {
+        function renderEquipmentList(items) {
             const container = document.getElementById('equipment-items');
-            
-            // Get current franchise
-            const currentFranchise = document.getElementById('franchise-name').value.trim();
-            
-            if (!currentFranchise || !equipmentConfig[currentFranchise] || equipmentConfig[currentFranchise].length === 0) {
+            if (!items || items.length === 0) {
                 container.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No equipment configured yet. Add your first equipment above.</p>';
                 return;
             }
-
-            const items = equipmentConfig[currentFranchise];
-            container.innerHTML = items.map((item, idx) => `
+            container.innerHTML = items.map(item => `
                 <div class="equipment-item">
-                    <span class="equipment-name">${item.name}</span>
-                    <span class="equipment-type type-${item.type.toLowerCase().replace(' ', '-')}">${item.type}</span>
-                    <button class="btn-delete" onclick="deleteEquipment('${currentFranchise}', ${idx})">Delete</button>
+                    <span class="equipment-name">${escapeHtml(item.equipment_name)}</span>
+                    <span class="equipment-type type-${item.equipment_type.toLowerCase().replace(' ', '-')}">${escapeHtml(item.equipment_type)}</span>
+                    <button class="btn-delete" onclick="deleteEquipment(${JSON.stringify(item.equipment_name)})">Delete</button>
                 </div>
             `).join('');
         }
 
-        function deleteEquipment(franchise, index) {
-            if (confirm('Delete this equipment mapping?')) {
-                equipmentConfig[franchise].splice(index, 1);
-                localStorage.setItem('equipmentConfig', JSON.stringify(equipmentConfig));
-                renderEquipmentList();
-                showSuccessMessage('✓ Equipment mapping deleted');
+        async function deleteEquipment(equipmentName) {
+            if (!confirm('Delete this equipment mapping?')) return;
+            try {
+                const resp = await fetch('/api/equipment-mappings/' + encodeURIComponent(equipmentName), { method: 'DELETE' });
+                if (!resp.ok) throw new Error('Delete failed');
+                showSuccessMessage('\u2713 Equipment mapping deleted');
+                loadMappings();
+            } catch (e) {
+                showError('Could not delete: ' + e.message);
             }
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
         function showSuccessMessage(message) {
             const msgBox = document.getElementById('success-message');
+            document.getElementById('error-message').style.display = 'none';
             msgBox.textContent = message;
             msgBox.style.display = 'block';
-            setTimeout(() => {
-                msgBox.style.display = 'none';
-            }, 3000);
+            setTimeout(() => { msgBox.style.display = 'none'; }, 3000);
         }
 
-        // Auto-refresh list when franchise name changes
-        document.getElementById('franchise-name').addEventListener('change', renderEquipmentList);
-        document.getElementById('franchise-name').addEventListener('blur', renderEquipmentList);
+        function showError(message) {
+            const msgBox = document.getElementById('error-message');
+            document.getElementById('success-message').style.display = 'none';
+            msgBox.textContent = message;
+            msgBox.style.display = 'block';
+        }
+
+        loadMappings();
     </script>
     <script>
         const creditsModal = document.getElementById('creditsModal');
