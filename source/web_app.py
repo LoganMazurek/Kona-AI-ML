@@ -2223,6 +2223,22 @@ def bulk_upload_page():
                      'errors': [f'Could not read file: {exc}']},
         )
 
+    # If the upload includes payment terms, only process rows with Payment Term == 'menu'.
+    payment_term_col = next(
+        (
+            col
+            for col in df.columns
+            if str(col).strip().lower() in {'payment term', 'payment terms'}
+        ),
+        None,
+    )
+    ignored_non_menu_rows = 0
+    if payment_term_col is not None:
+        payment_series = df[payment_term_col].fillna('').astype(str).str.strip().str.lower()
+        menu_mask = payment_series.eq('menu')
+        ignored_non_menu_rows = int((~menu_mask).sum())
+        df = df[menu_mask].copy()
+
     required_cols = {
         'Industry',
         'Equipment Type',
@@ -2284,7 +2300,7 @@ def bulk_upload_page():
 
     added = 0
     outcomes = 0
-    skipped = 0
+    skipped = ignored_non_menu_rows
     errors = []
     today = datetime.utcnow().date()
     batch_model_id = 'bulk_upload'
