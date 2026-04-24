@@ -562,19 +562,21 @@
 
     <script>
         (function () {
+            const uploadForm = document.querySelector('.upload-form');
             const classifyForm = document.querySelector('.equip-classify-card form');
+            const uploadFileInput = uploadForm ? uploadForm.querySelector('input[type="file"][name="file"]') : null;
             const overlay = document.getElementById('uploadProcessingOverlay');
             const meterFill = document.getElementById('uploadProcessingMeterFill');
             const percentLabel = document.getElementById('uploadProcessingPercent');
             const estimateLabel = document.getElementById('uploadProcessingEstimate');
             const funLine = document.getElementById('uploadProcessingFunLine');
+            const subtitle = document.querySelector('.processing-subtitle');
 
-            if (!classifyForm || !overlay || !meterFill || !percentLabel || !estimateLabel || !funLine) {
+            if ((!uploadForm && !classifyForm) || !overlay || !meterFill || !percentLabel || !estimateLabel || !funLine || !subtitle) {
                 return;
             }
 
             const unknownEquipmentCount = Number("{{ unknown_equipment | length if unknown_equipment else 0 }}") || 0;
-            const estimatedSeconds = Math.max(12, Math.min(120, 10 + (unknownEquipmentCount * 4)));
             const funMessages = [
                 'Matching equipment profiles to forecast features...',
                 'Calibrating truck-vs-kiosk event dynamics...',
@@ -589,55 +591,98 @@
                 return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
             }
 
-            let hasStarted = false;
+            function estimateUploadSeconds() {
+                if (!uploadFileInput || !uploadFileInput.files || !uploadFileInput.files.length) {
+                    return 45;
+                }
 
-            classifyForm.addEventListener('submit', function () {
-                if (hasStarted) {
+                const fileSizeBytes = uploadFileInput.files[0].size || 0;
+                const sizeBased = Math.ceil(fileSizeBytes / (180 * 1024));
+                return Math.max(25, Math.min(240, 14 + sizeBased));
+            }
+
+            function attachProcessingBehavior(form, submitSelector, subtitleText, estimatedSeconds) {
+                if (!form) {
                     return;
                 }
 
-                hasStarted = true;
-                overlay.classList.add('active');
-                overlay.setAttribute('aria-hidden', 'false');
+                let hasStarted = false;
 
-                const submitBtn = classifyForm.querySelector('.classify-btn');
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                    submitBtn.style.opacity = '0.6';
-                    submitBtn.style.cursor = 'not-allowed';
-                }
-
-                const startTime = Date.now();
-                let messageIndex = 0;
-                estimateLabel.textContent = 'Estimated time remaining: ' + toClock(estimatedSeconds);
-
-                const tick = window.setInterval(function () {
-                    const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-                    const boundedElapsed = Math.min(elapsedSeconds, estimatedSeconds);
-                    const progress = (boundedElapsed / estimatedSeconds) * 100;
-
-                    meterFill.style.width = progress.toFixed(1) + '%';
-                    percentLabel.textContent = Math.floor(progress) + '% complete';
-
-                    const remaining = Math.max(0, estimatedSeconds - elapsedSeconds);
-                    estimateLabel.textContent = 'Estimated time remaining: ' + toClock(remaining);
-
-                    if (elapsedSeconds % 3 === 0) {
-                        messageIndex = (messageIndex + 1) % funMessages.length;
-                        funLine.textContent = funMessages[messageIndex];
+                form.addEventListener('submit', function (event) {
+                    if (hasStarted) {
+                        event.preventDefault();
+                        return;
                     }
 
-                    if (elapsedSeconds >= estimatedSeconds) {
-                        percentLabel.textContent = 'Almost there... finalizing upload';
-                        estimateLabel.textContent = 'Estimated time remaining: finishing up';
-                        meterFill.style.width = '98%';
-                    }
-                }, 300);
+                    hasStarted = true;
+                    subtitle.textContent = subtitleText;
+                    overlay.classList.add('active');
+                    overlay.setAttribute('aria-hidden', 'false');
 
-                window.addEventListener('pageshow', function () {
-                    window.clearInterval(tick);
-                }, { once: true });
-            });
+                    const submitBtn = form.querySelector(submitSelector);
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.style.opacity = '0.6';
+                        submitBtn.style.cursor = 'not-allowed';
+                    }
+
+                    const startTime = Date.now();
+                    let messageIndex = 0;
+                    estimateLabel.textContent = 'Estimated time remaining: ' + toClock(estimatedSeconds);
+
+                    const tick = window.setInterval(function () {
+                        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+                        if (elapsedSeconds < estimatedSeconds) {
+                            const progress = (elapsedSeconds / estimatedSeconds) * 92;
+                            meterFill.style.width = progress.toFixed(1) + '%';
+                            percentLabel.textContent = Math.max(1, Math.floor(progress)) + '% complete';
+
+                            const remaining = Math.max(0, estimatedSeconds - elapsedSeconds);
+                            estimateLabel.textContent = 'Estimated time remaining: ' + toClock(remaining);
+                        } else {
+                            const overrun = elapsedSeconds - estimatedSeconds;
+                            const pulse = 92 + Math.min(7, (overrun % 8));
+                            meterFill.style.width = pulse.toFixed(1) + '%';
+                            percentLabel.textContent = 'Still processing your upload...';
+                            estimateLabel.textContent = 'Elapsed time: ' + toClock(elapsedSeconds) + ' (taking longer than expected)';
+
+                            if (overrun % 6 === 0) {
+                                const longRunMessages = [
+                                    'Still running dedup checks and prediction batches...',
+                                    'Large upload detected - continuing event-level processing...',
+                                    'Finalizing database writes for processed events...',
+                                ];
+                                funLine.textContent = longRunMessages[Math.floor(overrun / 6) % longRunMessages.length];
+                            }
+                        }
+
+                        if (elapsedSeconds % 3 === 0) {
+                            messageIndex = (messageIndex + 1) % funMessages.length;
+                            if (elapsedSeconds < estimatedSeconds) {
+                                funLine.textContent = funMessages[messageIndex];
+                            }
+                        }
+                    }, 300);
+
+                    window.addEventListener('pageshow', function () {
+                        window.clearInterval(tick);
+                    }, { once: true });
+                });
+            }
+
+            attachProcessingBehavior(
+                uploadForm,
+                '.submit-btn',
+                'We are parsing your spreadsheet, deduplicating rows, and generating predictions now.',
+                estimateUploadSeconds()
+            );
+
+            attachProcessingBehavior(
+                classifyForm,
+                '.classify-btn',
+                'We are saving your equipment choices and running event processing now.',
+                Math.max(45, Math.min(240, 30 + (unknownEquipmentCount * 6)))
+            );
         })();
     </script>
 </body>

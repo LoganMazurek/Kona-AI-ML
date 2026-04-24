@@ -346,6 +346,13 @@
             align-items: center;
             transition: border-color 0.3s;
         }
+
+        .model-item.locked,
+        .model-item.training,
+        .model-item.calibrating {
+            background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+            border-color: #cbd5e1;
+        }
         
         .model-item.default {
             border-color: #667eea;
@@ -354,6 +361,12 @@
         
         .model-item:hover {
             border-color: #667eea;
+        }
+
+        .model-item.locked:hover,
+        .model-item.training:hover,
+        .model-item.calibrating:hover {
+            border-color: #94a3b8;
         }
 
         .tag-list {
@@ -403,10 +416,171 @@
             font-size: 13px;
             color: #666;
         }
+
+        .model-metric-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            line-height: 1.6;
+        }
+
+        .franchise-progress {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid #dbe3ef;
+        }
+
+        .progress-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #42526e;
+            margin-bottom: 8px;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 10px;
+            border-radius: 999px;
+            background: #dbe4f0;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #667eea 0%, #4fd1c5 100%);
+        }
+
+        .progress-note {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #5b6577;
+        }
+
+        .model-lock-badge {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 8px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #e2e8f0;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        .model-recommended-badge {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 8px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #16a34a, #15803d);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            box-shadow: 0 1px 4px rgba(22,163,74,0.25);
+        }
+
+        .model-item.recommended {
+            border-left: 3px solid #16a34a;
+            background: linear-gradient(to right, rgba(22,163,74,0.04) 0%, transparent 30%);
+        }
+
+        .model-stat-grid {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+        }
+
+        .model-stat-card {
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(102, 126, 234, 0.08);
+            border: 1px solid rgba(102, 126, 234, 0.18);
+        }
+
+        .model-stat-card strong {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: #5b6577;
+            margin-bottom: 4px;
+        }
+
+        .model-stat-card span {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+        }
         
         .model-actions {
             display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
             gap: 10px;
+            min-width: 250px;
+        }
+
+        .trend-panel {
+            width: 240px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #dbe3ef;
+            background: rgba(255, 255, 255, 0.86);
+        }
+
+        .trend-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            font-weight: 700;
+            color: #5b6577;
+            margin-bottom: 6px;
+        }
+
+        .trend-svg {
+            width: 100%;
+            height: 88px;
+            display: block;
+            background: #f8fbff;
+            border-radius: 6px;
+        }
+
+        .trend-axis {
+            stroke: #cfd8e3;
+            stroke-width: 1;
+        }
+
+        .trend-line {
+            fill: none;
+            stroke: #667eea;
+            stroke-width: 2;
+        }
+
+        .trend-dot {
+            fill: #667eea;
+        }
+
+        .trend-meta {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
         }
         
         .model-form {
@@ -879,6 +1053,54 @@
             margin-top: 20px;
             font-weight: 600;
         }
+
+        .franchise-popup-content {
+            background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+            border-top: 5px solid #667eea;
+        }
+
+        .franchise-popup-kicker {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(102, 126, 234, 0.12);
+            color: #4454b8;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .franchise-popup-stats {
+            margin-top: 16px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .franchise-popup-stat {
+            border-radius: 10px;
+            padding: 12px;
+            background: #edf2ff;
+            border: 1px solid #d8e2ff;
+        }
+
+        .franchise-popup-stat strong {
+            display: block;
+            font-size: 11px;
+            color: #5b6577;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 5px;
+        }
+
+        .franchise-popup-stat span {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+        }
     </style>
 </head>
 <body>
@@ -929,14 +1151,27 @@
                         <div class="model-list">
                             {% if models %}
                                 {% for model in models %}
-                                <div class="model-item {% if default_model and model.model_id == default_model.model_id %}default{% endif %}">
+                                <div class="model-item {% if default_model and model.model_id == default_model.model_id %}default{% endif %} {% if model.selectable is defined and not model.selectable %}{{ model.status }}{% endif %} {% if model.is_recommended %}recommended{% endif %}">  
                                     <div class="model-info">
-                                        <h4>{{ model.model_name }}</h4>
+                                        <h4>
+                                            {{ model.model_name }}
+                                            {% if model.is_recommended %}
+                                            <span class="model-recommended-badge">&#10022; Recommended</span>
+                                            {% endif %}
+                                            {% if model.selectable is defined and not model.selectable %}
+                                            <span class="model-lock-badge">
+                                                {% if model.status == 'training' %}Training{% elif model.status == 'calibrating' %}Calibrating{% else %}Locked{% endif %}
+                                            </span>
+                                            {% endif %}
+                                        </h4>
                                         <div class="model-details">
-                                            <strong>Type:</strong> {{ model.model_type or 'Unknown' }} |
-                                            <strong>Accuracy:</strong> ±${% if model.cv_mae is not none %}{{ model.cv_mae|round(2) }}{% else %}N/A{% endif %}/hr |
-                                            <strong>Features:</strong> {{ model.feature_count or 'N/A' }} |
-                                            <strong>Trained:</strong> {% if model.training_date %}{{ model.training_date|mdy_date }}{% else %}N/A{% endif %}
+                                            <div class="model-metric-line">
+                                                <span><strong>Type:</strong> {{ model.model_type or 'Unknown' }}</span>
+                                                <span><strong>Accuracy:</strong> ±${% if model.cv_mae is not none %}{{ model.cv_mae|round(2) }}{% else %}N/A{% endif %}/hr</span>
+                                                <span><strong>Features:</strong> {{ model.feature_count or 'N/A' }}</span>
+                                                <span><strong>Trained:</strong> {% if model.training_date %}{{ model.training_date|mdy_date }}{% else %}N/A{% endif %}</span>
+                                                <span><strong>R²:</strong> {% if model.r2 is not none %}{{ '%.3f'|format(model.r2) }}{% else %}N/A{% endif %}</span>
+                                            </div>
                                             {% if default_model and model.model_id == default_model.model_id %}
                                             <span class="default-badge">✓ Current</span>
                                             {% endif %}
@@ -963,15 +1198,80 @@
                                                     {% endif %}
                                                 {% endif %}
                                             </div>
+                                            {% if model.model_type == 'franchise_specific' %}
+                                            <div class="franchise-progress">
+                                                <div class="progress-head">
+                                                    <span>{{ model.progress_event_count if model.progress_event_count is defined else (model.eligible_event_count or 0) }} / {{ model.progress_event_goal if model.progress_event_goal is defined else (model.threshold_event_count or 100) }} {{ model.progress_event_label if model.progress_event_label is defined else 'completed events' }}</span>
+                                                    <span>{{ (model.progress_pct or 0)|round(0) }}%</span>
+                                                </div>
+                                                <div class="progress-track">
+                                                    <div class="progress-fill" style="width: {{ model.progress_pct or 0 }}%;"></div>
+                                                </div>
+                                                <div class="progress-note">
+                                                    {% if model.selectable %}
+                                                        Trained on {{ model.data_records_count or model.eligible_event_count or 0 }} completed events. Your dedicated model is live.
+                                                        {% if model.next_retrain_event_count %}
+                                                            Next auto-refresh at {{ model.next_retrain_event_count }} completed events
+                                                            {% if model.remaining_to_next_retrain and model.remaining_to_next_retrain > 0 %}
+                                                                ({{ model.remaining_to_next_retrain }} to go).
+                                                            {% else %}
+                                                                (refresh due on this visit).
+                                                            {% endif %}
+                                                        {% endif %}
+                                                        Only events with recorded actual net sales count toward this refresh progress.
+                                                    {% elif model.status == 'training' %}
+                                                        Threshold reached. We are packaging your dedicated model now.
+                                                    {% elif model.status == 'calibrating' %}
+                                                        {{ model.last_training_message or model.description }}
+                                                    {% else %}
+                                                        {{ model.remaining_events or 0 }} more completed events to unlock training.
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            {% if model.selectable and model.training_metrics %}
+                                            <div class="model-stat-grid">
+                                                <div class="model-stat-card">
+                                                    <strong>Validation Error</strong>
+                                                    <span>±${{ model.cv_mae|round(1) }}/hr</span>
+                                                </div>
+                                                <div class="model-stat-card">
+                                                    <strong>R²</strong>
+                                                    {% set card_r2 = model.training_metrics.r2 if model.training_metrics.r2 is not none else model.r2 %}
+                                                    <span>{% if card_r2 is not none %}{{ '%.3f'|format(card_r2) }}{% else %}N/A{% endif %}</span>
+                                                </div>
+                                                <div class="model-stat-card">
+                                                    <strong>Training Rows</strong>
+                                                    <span>{{ model.data_records_count or 0 }}</span>
+                                                </div>
+                                            </div>
+                                            {% endif %}
+                                            {% endif %}
                                         </div>
                                     </div>
                                     <div class="model-actions">
-                                        {% if not default_model or model.model_id != default_model.model_id %}
+                                        {% if model.model_type == 'franchise_specific' and model.selectable and model.training_history %}
+                                        <div class="trend-panel js-franchise-trend" data-history='{{ model.training_history|tojson }}'>
+                                            <div class="trend-title">Model Improvement (R²)</div>
+                                            <svg class="trend-svg" viewBox="0 0 220 88" preserveAspectRatio="none" role="img" aria-label="Franchise model R squared trend over retraining runs">
+                                                <line class="trend-axis" x1="8" y1="76" x2="212" y2="76"></line>
+                                                <line class="trend-axis" x1="8" y1="10" x2="8" y2="76"></line>
+                                            </svg>
+                                            <div class="trend-meta">
+                                                <span class="trend-start">Start: --</span>
+                                                <span class="trend-end">Latest: --</span>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                        {% if (model.selectable if model.selectable is defined else true) and (not default_model or model.model_id != default_model.model_id) %}
                                         <form method="POST" action="{{ url_for('select_model') }}" class="model-form">
                                             <input type="hidden" name="model_id" value="{{ model.model_id }}">
                                             <input type="hidden" name="month" value="{{ month_key }}">
                                             <button type="submit" class="select-model-btn">Select Model</button>
                                         </form>
+                                        {% elif model.selectable is defined and not model.selectable %}
+                                        <button type="button" class="select-model-btn" disabled>
+                                            {% if model.status == 'training' %}Training{% elif model.status == 'calibrating' %}Collecting Data{% else %}Locked{% endif %}
+                                        </button>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -1338,6 +1638,34 @@
             <button class="credits-close" type="button" onclick="closeCredits()">Close</button>
         </div>
     </div>
+    {% if franchise_model_popup %}
+    <div id="franchiseModelModal" class="credits-modal" role="dialog" aria-modal="true" aria-labelledby="franchiseModelTitle" style="display: flex;">
+        <div class="credits-modal-content franchise-popup-content">
+            <span class="franchise-popup-kicker">
+                {% if franchise_model_popup.kind == 'ready' %}Model Ready{% elif franchise_model_popup.kind == 'retrained' %}Model Refreshed{% else %}Milestone Reached{% endif %}
+            </span>
+            <h3 id="franchiseModelTitle">{{ franchise_model_popup.title }}</h3>
+            <p>{{ franchise_model_popup.message }}</p>
+            {% if franchise_model_popup.kind == 'ready' and franchise_model_progress.latest_model %}
+            <div class="franchise-popup-stats">
+                <div class="franchise-popup-stat">
+                    <strong>Validation Error</strong>
+                    <span>{% if franchise_model_popup.cv_mae is not none %}±${{ franchise_model_popup.cv_mae|round(1) }}/hr{% else %}N/A{% endif %}</span>
+                </div>
+                <div class="franchise-popup-stat">
+                    <strong>R²</strong>
+                    <span>{% if franchise_model_popup.r2 is not none %}{{ '%.3f'|format(franchise_model_popup.r2) }}{% else %}N/A{% endif %}</span>
+                </div>
+                <div class="franchise-popup-stat">
+                    <strong>Training Rows</strong>
+                    <span>{{ franchise_model_popup.training_rows or 0 }}</span>
+                </div>
+            </div>
+            {% endif %}
+            <button class="credits-close" type="button" onclick="closeFranchiseModelModal()">Close</button>
+        </div>
+    </div>
+    {% endif %}
     <script>
         const RECENT_SECTION_ID = 'recentRecordsSection';
 
@@ -1526,6 +1854,7 @@
     </script>
     <script>
         const creditsModal = document.getElementById('creditsModal');
+        const franchiseModelModal = document.getElementById('franchiseModelModal');
 
         function openCredits() {
             if (creditsModal) {
@@ -1539,6 +1868,12 @@
             }
         }
 
+        function closeFranchiseModelModal() {
+            if (franchiseModelModal) {
+                franchiseModelModal.style.display = 'none';
+            }
+        }
+
         if (creditsModal) {
             creditsModal.addEventListener('click', (event) => {
                 if (event.target === creditsModal) {
@@ -1547,11 +1882,86 @@
             });
         }
 
+        if (franchiseModelModal) {
+            franchiseModelModal.addEventListener('click', (event) => {
+                if (event.target === franchiseModelModal) {
+                    closeFranchiseModelModal();
+                }
+            });
+        }
+
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 closeCredits();
+                closeFranchiseModelModal();
             }
         });
+
+        function renderFranchiseTrendCharts() {
+            const panels = document.querySelectorAll('.js-franchise-trend');
+            panels.forEach((panel) => {
+                let history = [];
+                try {
+                    history = JSON.parse(panel.dataset.history || '[]');
+                } catch (error) {
+                    history = [];
+                }
+
+                const points = history
+                    .filter((row) => row && row.r2 !== null && row.r2 !== undefined)
+                    .map((row) => ({
+                        r2: Number(row.r2),
+                        trained_at: row.trained_at,
+                    }))
+                    .filter((row) => Number.isFinite(row.r2));
+
+                const svg = panel.querySelector('.trend-svg');
+                const startLabel = panel.querySelector('.trend-start');
+                const endLabel = panel.querySelector('.trend-end');
+                if (!svg || !startLabel || !endLabel || !points.length) {
+                    if (startLabel) startLabel.textContent = 'Start: N/A';
+                    if (endLabel) endLabel.textContent = 'Latest: N/A';
+                    return;
+                }
+
+                const left = 10;
+                const right = 210;
+                const top = 10;
+                const bottom = 76;
+                const yRange = bottom - top;
+                const xRange = right - left;
+
+                const minR2 = Math.min(...points.map((p) => p.r2));
+                const maxR2 = Math.max(...points.map((p) => p.r2));
+                const span = Math.max(0.001, maxR2 - minR2);
+
+                const xy = points.map((point, index) => {
+                    const x = left + (points.length === 1 ? xRange : (index / (points.length - 1)) * xRange);
+                    const normalized = (point.r2 - minR2) / span;
+                    const y = bottom - (normalized * yRange);
+                    return { x, y, r2: point.r2 };
+                });
+
+                const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                polyline.setAttribute('class', 'trend-line');
+                polyline.setAttribute('points', xy.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+                svg.appendChild(polyline);
+
+                xy.forEach((p) => {
+                    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    dot.setAttribute('class', 'trend-dot');
+                    dot.setAttribute('cx', p.x.toFixed(1));
+                    dot.setAttribute('cy', p.y.toFixed(1));
+                    dot.setAttribute('r', '2.6');
+                    svg.appendChild(dot);
+                });
+
+                startLabel.textContent = `Start: ${points[0].r2.toFixed(3)}`;
+                endLabel.textContent = `Latest: ${points[points.length - 1].r2.toFixed(3)}`;
+            });
+        }
+
+        renderFranchiseTrendCharts();
     </script>
 </body>
 </html>
