@@ -12,7 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 try:
     from Kona_AI_ML.franchise_db import FranchiseDatabase
 except ImportError:
-    from .franchise_db import FranchiseDatabase
+    from franchise_db import FranchiseDatabase
 
 
 class AuthManager:
