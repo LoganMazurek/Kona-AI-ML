@@ -2385,7 +2385,25 @@ def bulk_upload_page():
 
         pending_dir = os.path.realpath(os.path.join(tempfile.gettempdir(), 'kona_pending_uploads'))
         franchise_id_safe = str(franchise_id)
-        expected_name = f'{pending_token}_{franchise_id_safe}.tmp'
+        safe_name_re = re.compile(rf'^([0-9a-f]{{32}})_{re.escape(franchise_id_safe)}\.tmp$')
+        expected_name = None
+        try:
+            for entry in os.listdir(pending_dir):
+                m = safe_name_re.match(entry)
+                if m and m.group(1) == pending_token:
+                    expected_name = entry
+                    break
+        except OSError:
+            expected_name = None
+
+        if not expected_name:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Invalid pending upload token.']},
+            )
+
         candidate_path = os.path.join(pending_dir, expected_name)
         pending_path = os.path.realpath(candidate_path)
         expected_path = os.path.join(pending_dir, expected_name)
