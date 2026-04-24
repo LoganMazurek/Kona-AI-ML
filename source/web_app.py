@@ -2036,7 +2036,203 @@ def get_industries():
     return jsonify({'industries': industries})
 
 
+# ===== EQUIPMENT CONFIG ROUTES =====
+
+@app.route('/equipment-config')
+@require_auth
+def equipment_config_page():
+    """Render the equipment configuration page."""
+    return render_template('equipment_config.html')
+
+
+@app.route('/api/equipment-mappings', methods=['GET'])
+@require_auth
+def get_equipment_mappings():
+    """Return all equipment mappings for the current franchise."""
+    franchise_id = get_current_franchise_id()
+    mappings = franchise_db.get_equipment_mappings(franchise_id)
+    return jsonify({'mappings': mappings})
+
+
+@app.route('/api/equipment-mappings', methods=['POST'])
+@require_auth
+def upsert_equipment_mapping():
+    """Add or update an equipment mapping."""
+    franchise_id = get_current_franchise_id()
+    data = request.get_json(silent=True) or {}
+    equipment_name = str(data.get('equipment_name') or '').strip()
+    equipment_type = str(data.get('equipment_type') or '').strip()
+    notes = str(data.get('notes') or '').strip()
+    if not equipment_name or not equipment_type:
+        return jsonify({'error': 'equipment_name and equipment_type are required'}), 400
+    ok = franchise_db.upsert_equipment_mapping(franchise_id, equipment_name, equipment_type, notes)
+    if not ok:
+        return jsonify({'error': 'Failed to save equipment mapping'}), 500
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/equipment-mappings/<path:equipment_name>', methods=['DELETE'])
+@require_auth
+def delete_equipment_mapping(equipment_name: str):
+    """Delete an equipment mapping by name."""
+    franchise_id = get_current_franchise_id()
+    franchise_db.delete_equipment_mapping(franchise_id, equipment_name)
+    return jsonify({'status': 'ok'})
+
+
 # ===== BULK UPLOAD ROUTES =====
+
+# Date/time formats used by the scheduling software exports.
+_SCHEDULING_DATETIME_FORMATS = [
+    '%b %d, %Y %I:%M %p',   # Apr 04, 2026 08:15 AM
+    '%m/%d/%Y %I:%M %p',    # 04/04/2026 08:15 AM
+    '%Y-%m-%d %H:%M:%S',
+    '%Y-%m-%d %H:%M',
+]
+
+
+def _parse_scheduling_dt(value: object):
+    """Parse a datetime from a scheduling export cell (string or datetime)."""
+    if isinstance(value, datetime):
+        return value
+    text = str(value or '').strip()
+    if not text or text == '-':
+        return None
+    for fmt in _SCHEDULING_DATETIME_FORMATS:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _scheduling_duration_hours(start, end) -> str:
+    """Return duration in hours between two datetime objects, or empty string."""
+    if start is None or end is None:
+        return ''
+    delta = end - start
+    hours = delta.total_seconds() / 3600
+    return str(round(hours, 2)) if hours > 0 else ''
+
+
+def _scheduling_zip(value: object) -> str:
+    """Normalize ZIP code — strip trailing .0 from float-ish values."""
+    text = str(value or '').strip()
+    if re.match(r'^\d+\.0$', text):
+        return text[:text.index('.')]
+    return text
+
+
+def _convert_scheduling_export(file_bytes) -> 'pd.DataFrame | None':
+    """Detect a scheduling software export and return a bulk-upload-ready DataFrame.
+
+    Supports two formats:
+      - ``-events``: clean header at row 1 with 'Event Code' as the first column.
+      - ``-report``: 'Sales History Report' summary format; data table begins at
+        the row where column A == 'Event Name'.
+
+    Returns ``None`` if the file does not look like either scheduling format.
+    """
+    try:
+        import openpyxl as _opxl
+    except ImportError:
+        return None
+
+    try:
+        file_bytes.seek(0)
+        wb = _opxl.load_workbook(file_bytes, read_only=True, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    first_cell = str(rows[0][0] or '').strip()
+
+    payment_term_headers = {'payment term', 'payment terms'}
+
+    # --- -events format ---
+    if first_cell == 'Event Code':
+        headers = [str(h or '').strip() for h in rows[0]]
+
+        def _payment_term_is_menu(row_dict: dict) -> bool:
+            for key, value in row_dict.items():
+                if str(key or '').strip().lower() in payment_term_headers:
+                    return str(value or '').strip().lower() == 'menu'
+            return True
+
+        records = []
+        for row in rows[1:]:
+            if not any(v is not None for v in row):
+                continue
+            d = dict(zip(headers, row))
+            if not _payment_term_is_menu(d):
+                continue
+            start = _parse_scheduling_dt(d.get('Event Start Date Time'))
+            end = _parse_scheduling_dt(d.get('Event End Date Time'))
+            records.append({
+                'Event Name': str(d.get('Event Name') or '').strip(),
+                'Industry': str(d.get('Event Industry') or '').strip(),
+                'Equipment Type': '',
+                'Equipment Number': str(d.get('Event Equipment') or '').strip(),
+                'Source Event ID': str(d.get('Event Code') or '').strip(),
+                'Event Date': start.strftime('%Y-%m-%d') if start else '',
+                'Start Time': start.strftime('%H:%M') if start else '',
+                'Duration (Hours)': _scheduling_duration_hours(start, end),
+                'City': str(d.get('City') or '').strip(),
+                'ZIP Code': _scheduling_zip(d.get('Zip Code')),
+                'Temperature (°F)': '',
+                'Net Sales': d.get('Event Sales Collected ($)') or '',
+            })
+        return pd.DataFrame(records) if records else None
+
+    # --- -report format ---
+    if first_cell == 'Sales History Report':
+        header_idx = None
+        for i, row in enumerate(rows):
+            if str(row[0] or '').strip() == 'Event Name':
+                header_idx = i
+                break
+        if header_idx is None:
+            return None
+        headers = [str(h or '').strip() for h in rows[header_idx]]
+
+        def _payment_term_is_menu(row_dict: dict) -> bool:
+            for key, value in row_dict.items():
+                if str(key or '').strip().lower() in payment_term_headers:
+                    return str(value or '').strip().lower() == 'menu'
+            return True
+
+        records = []
+        for row in rows[header_idx + 1:]:
+            if not any(v is not None for v in row):
+                continue
+            d = dict(zip(headers, row))
+            if not _payment_term_is_menu(d):
+                continue
+            start = _parse_scheduling_dt(d.get('Event Start Date'))
+            end = _parse_scheduling_dt(d.get('Event End Date'))
+            records.append({
+                'Event Name': str(d.get('Event Name') or '').strip(),
+                'Industry': str(d.get('Industry') or '').strip(),
+                'Equipment Type': '',
+                'Equipment Number': '',
+                'Source Event ID': '',
+                'Event Date': start.strftime('%Y-%m-%d') if start else '',
+                'Start Time': start.strftime('%H:%M') if start else '',
+                'Duration (Hours)': _scheduling_duration_hours(start, end),
+                'City': str(d.get('City') or '').strip(),
+                'ZIP Code': _scheduling_zip(d.get('ZipCode')),
+                'Temperature (°F)': '',
+                'Net Sales': d.get('Sales $') or '',
+            })
+        return pd.DataFrame(records) if records else None
+
+    return None
+
 
 BULK_UPLOAD_COLUMNS = [
     'Event Name',
@@ -2192,56 +2388,208 @@ def bulk_upload_page():
     if request.method == 'GET':
         return render_template('bulk_upload.html', recent_uploads=recent_uploads)
 
-    # --- POST: process the uploaded file ---
-    uploaded_file = request.files.get('file')
-    if not uploaded_file or not uploaded_file.filename:
-        return render_template(
-            'bulk_upload.html',
-            recent_uploads=recent_uploads,
-            results={'added': 0, 'outcomes': 0, 'skipped': 0,
-                     'errors': ['No file was uploaded.']},
-        )
+    import io as _io
 
-    filename = uploaded_file.filename.lower()
-    if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
-        return render_template(
-            'bulk_upload.html',
-            recent_uploads=recent_uploads,
-            results={'added': 0, 'outcomes': 0, 'skipped': 0,
-                     'errors': ['Only .xlsx and .xls files are accepted.']},
+    def _filter_menu_payment_terms(df_in: 'pd.DataFrame'):
+        """If Payment Term columns exist, keep only menu rows and return skipped count."""
+        payment_term_col = next(
+            (
+                col
+                for col in df_in.columns
+                if str(col).strip().lower() in {'payment term', 'payment terms'}
+            ),
+            None,
         )
+        if payment_term_col is None:
+            return df_in, 0
 
-    try:
-        import io as _io
-        file_bytes = _io.BytesIO(uploaded_file.read())
-        df = pd.read_excel(file_bytes, engine='openpyxl', dtype=str)
-    except Exception as exc:
-        return render_template(
-            'bulk_upload.html',
-            recent_uploads=recent_uploads,
-            results={'added': 0, 'outcomes': 0, 'skipped': 0,
-                     'errors': [f'Could not read file: {exc}']},
-        )
-
-    # If the upload includes payment terms, only process rows with Payment Term == 'menu'.
-    payment_term_col = next(
-        (
-            col
-            for col in df.columns
-            if str(col).strip().lower() in {'payment term', 'payment terms'}
-        ),
-        None,
-    )
-    ignored_non_menu_rows = 0
-    if payment_term_col is not None:
-        payment_series = df[payment_term_col].fillna('').astype(str).str.strip().str.lower()
+        payment_series = df_in[payment_term_col].fillna('').astype(str).str.strip().str.lower()
         menu_mask = payment_series.eq('menu')
-        ignored_non_menu_rows = int((~menu_mask).sum())
-        df = df[menu_mask].copy()
+        ignored_count = int((~menu_mask).sum())
+        return df_in[menu_mask].copy(), ignored_count
+
+    ignored_non_menu_rows = 0
+
+    # ------------------------------------------------------------------
+    # Phase 2: user classified unknown equipment and is resubmitting.
+    # ------------------------------------------------------------------
+    pending_token = request.form.get('pending_file_token', '').strip()
+    if pending_token:
+        if not re.match(r'^[0-9a-f]{32}$', pending_token):
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Invalid pending upload token.']},
+            )
+
+        pending_dir = os.path.realpath(os.path.join(tempfile.gettempdir(), 'kona_pending_uploads'))
+        franchise_id_safe = str(franchise_id)
+        safe_name_re = re.compile(rf'^([0-9a-f]{{32}})_{re.escape(franchise_id_safe)}\.tmp$')
+        expected_name = None
+        try:
+            for entry in os.listdir(pending_dir):
+                m = safe_name_re.match(entry)
+                if m and m.group(1) == pending_token:
+                    expected_name = entry
+                    break
+        except OSError:
+            expected_name = None
+
+        if not expected_name:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Invalid pending upload token.']},
+            )
+
+        candidate_path = os.path.join(pending_dir, expected_name)
+        pending_path = os.path.realpath(candidate_path)
+        expected_path = os.path.join(pending_dir, expected_name)
+        if os.path.commonpath([pending_dir, pending_path]) != pending_dir or pending_path != expected_path:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Invalid pending upload token.']},
+            )
+        if os.path.basename(pending_path) != expected_name:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Invalid pending upload token.']},
+            )
+        if not os.path.exists(pending_path):
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Pending upload expired or not found. Please re-upload the file.']},
+            )
+
+        # Save the user-supplied equipment type mappings before processing.
+        for key, value in request.form.items():
+            if key.startswith('equip_') and value:
+                equip_name = key[len('equip_'):]
+                franchise_db.upsert_equipment_mapping(franchise_id, equip_name, value, '')
+
+        try:
+            if not os.path.isfile(pending_path):
+                raise OSError("Pending upload is not a regular file.")
+            open_flags = os.O_RDONLY
+            if hasattr(os, 'O_NOFOLLOW'):
+                open_flags |= os.O_NOFOLLOW
+            fd = os.open(pending_path, open_flags)
+            with os.fdopen(fd, 'rb') as fh:
+                file_bytes = _io.BytesIO(fh.read())
+            uploaded_filename_for_record = request.form.get('pending_original_filename', 'upload.xlsx')
+        except OSError:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Could not read pending upload. Please re-upload.']},
+            )
+        finally:
+            try:
+                os.remove(pending_path)
+            except OSError:
+                pass
+
+        converted_df = _convert_scheduling_export(file_bytes)
+        if converted_df is not None:
+            df = converted_df
+        else:
+            file_bytes.seek(0)
+            try:
+                df = pd.read_excel(file_bytes, engine='openpyxl', dtype=str)
+            except Exception as exc:
+                return render_template(
+                    'bulk_upload.html',
+                    recent_uploads=recent_uploads,
+                    results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                             'errors': [f'Could not read file: {exc}']},
+                )
+
+        df, ignored_non_menu_rows = _filter_menu_payment_terms(df)
+
+    # ------------------------------------------------------------------
+    # Phase 1: fresh file upload.
+    # ------------------------------------------------------------------
+    else:
+        uploaded_file = request.files.get('file')
+        if not uploaded_file or not uploaded_file.filename:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['No file was uploaded.']},
+            )
+
+        filename = uploaded_file.filename.lower()
+        if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Only .xlsx and .xls files are accepted.']},
+            )
+
+        try:
+            file_bytes = _io.BytesIO(uploaded_file.read())
+            converted_df = _convert_scheduling_export(file_bytes)
+            if converted_df is not None:
+                df = converted_df
+            else:
+                file_bytes.seek(0)
+                df = pd.read_excel(file_bytes, engine='openpyxl', dtype=str)
+        except Exception as exc:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': [f'Could not read file: {exc}']},
+            )
+
+        df, ignored_non_menu_rows = _filter_menu_payment_terms(df)
+
+        uploaded_filename_for_record = uploaded_file.filename
+
+        # Detect equipment numbers in the file that have no franchise mapping.
+        if 'Equipment Number' in df.columns:
+            known_mappings = {
+                m['equipment_name'].strip().lower()
+                for m in franchise_db.get_equipment_mappings(franchise_id)
+            }
+            unknown_equipment = sorted({
+                str(v).strip()
+                for v in df['Equipment Number'].dropna()
+                if str(v).strip() and str(v).strip().lower() not in known_mappings
+            })
+        else:
+            unknown_equipment = []
+
+        if unknown_equipment:
+            pending_dir = os.path.join(tempfile.gettempdir(), 'kona_pending_uploads')
+            os.makedirs(pending_dir, exist_ok=True)
+            pending_token = uuid.uuid4().hex
+            pending_path = os.path.join(pending_dir, f'{pending_token}_{franchise_id}.tmp')
+            file_bytes.seek(0)
+            with open(pending_path, 'wb') as fh:
+                fh.write(file_bytes.read())
+
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                unknown_equipment=unknown_equipment,
+                pending_file_token=pending_token,
+                pending_original_filename=uploaded_file.filename,
+            )
 
     required_cols = {
         'Industry',
-        'Equipment Type',
         'Event Date',
         'Start Time',
         'Duration (Hours)',
@@ -2335,6 +2683,12 @@ def bulk_upload_page():
         temperature_str = _cell_text(row, 'Temperature (°F)')
         net_sales_str = _cell_text(row, 'Net Sales')
 
+        # Infer equipment_type from equipment_number via franchise DB mapping when blank.
+        if not equipment_type and equipment_number:
+            inferred = franchise_db.lookup_equipment_type(franchise_id, equipment_number)
+            if inferred:
+                equipment_type = inferred
+
         # Validate required fields
         row_errors = []
         if not event_date_str:
@@ -2349,8 +2703,6 @@ def bulk_upload_page():
             row_errors.append('Start Time is required')
         if not industry:
             row_errors.append('Industry is required')
-        if not equipment_type:
-            row_errors.append('Equipment Type is required')
 
         if row_errors:
             errors.append(f'Row {row_num}: {"; ".join(row_errors)}')
@@ -2548,7 +2900,7 @@ def bulk_upload_page():
         batch_id=batch_id,
         franchise_id=franchise_id,
         model_id=batch_model_id,
-        original_filename=uploaded_file.filename,
+        original_filename=uploaded_filename_for_record,
         event_count=added,
         result_csv_path='',
     )

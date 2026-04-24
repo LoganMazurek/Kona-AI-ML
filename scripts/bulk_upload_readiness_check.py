@@ -13,6 +13,7 @@ Scenarios covered:
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -80,23 +81,27 @@ def _set_test_cookie(client, token: str) -> None:
 
 
 def _query_predictions(db_path: Path, franchise_id: str) -> List[sqlite3.Row]:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT prediction_id, event_name, scheduled_event_date,
-               predicted_total_revenue, actual_total_net_sales,
-               event_status, include_in_training, bulk_dedup_key
-        FROM predictions
-        WHERE franchise_id = ?
-        ORDER BY created_timestamp ASC
-        """,
-        (franchise_id,),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # Compatibility: older schemas may not include bulk_dedup_key.
+        cur.execute("PRAGMA table_info(predictions)")
+        columns = {row[1] for row in cur.fetchall()}
+        dedup_expr = "bulk_dedup_key" if "bulk_dedup_key" in columns else "NULL AS bulk_dedup_key"
+
+        cur.execute(
+            f"""
+            SELECT prediction_id, event_name, scheduled_event_date,
+                   predicted_total_revenue, actual_total_net_sales,
+                   event_status, include_in_training, {dedup_expr}
+            FROM predictions
+            WHERE franchise_id = ?
+            ORDER BY created_timestamp ASC
+            """,
+            (franchise_id,),
+        )
+        return cur.fetchall()
 
 
 def _prediction_by_event(rows: List[sqlite3.Row], event_name: str) -> sqlite3.Row:
@@ -118,6 +123,36 @@ def _post_excel(client, rows: List[Dict[str, Any]]):
                 data={"file": (fh, "bulk_upload.xlsx")},
                 content_type="multipart/form-data",
             )
+
+        # Two-phase upload: classify unknown equipment before processing.
+        html = response.get_data(as_text=True)
+        if 'name="pending_file_token"' in html:
+            token_match = re.search(r'name="pending_file_token"\s+value="([^"]+)"', html)
+            filename_match = re.search(r'name="pending_original_filename"\s+value="([^"]*)"', html)
+
+            if token_match:
+                post_data = {
+                    "pending_file_token": token_match.group(1),
+                    "pending_original_filename": filename_match.group(1) if filename_match else "bulk_upload.xlsx",
+                }
+
+                # Map unknown equipment numbers using row-provided type or Truck fallback.
+                equipment_type_by_number: Dict[str, str] = {}
+                for row in rows:
+                    equip_number = str(row.get("Equipment Number", "") or "").strip()
+                    equip_type = str(row.get("Equipment Type", "") or "").strip()
+                    if equip_number:
+                        equipment_type_by_number[equip_number] = equip_type or "Truck"
+
+                for equip_number, equip_type in equipment_type_by_number.items():
+                    post_data[f"equip_{equip_number}"] = equip_type
+
+                response = client.post(
+                    "/bulk-upload",
+                    data=post_data,
+                    content_type="application/x-www-form-urlencoded",
+                )
+
         return response
     finally:
         if tmp_path.exists():
@@ -132,7 +167,7 @@ def _assert(condition: bool, message: str) -> None:
 def run() -> int:
     print("Running bulk upload readiness checks...")
 
-    with tempfile.TemporaryDirectory(prefix="bulk-upload-check-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="bulk-upload-check-", ignore_cleanup_errors=True) as temp_dir:
         db_path = Path(temp_dir) / "franchise_data_test.db"
 
         # Patch app globals to isolated test dependencies.

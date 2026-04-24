@@ -16,3 +16,15 @@ If rollback is needed, restore from a snapshot:
 ```
 
 See full runbook: `deploy/DB_BACKUP_ROLLBACK.md`
+
+## Deploy
+
+On the droplet, from the repo directory:
+
+```bash
+./deploy/db_snapshot.sh
+git pull
+docker compose down && docker compose up -d --build
+```
+
+> Note: uses `docker compose` (plugin, not the legacy `docker-compose` standalone command).
