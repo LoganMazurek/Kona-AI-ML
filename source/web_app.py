@@ -2417,7 +2417,13 @@ def bulk_upload_page():
                 franchise_db.upsert_equipment_mapping(franchise_id, equip_name, value, '')
 
         try:
-            with open(pending_path, 'rb') as fh:
+            if not os.path.isfile(pending_path):
+                raise OSError("Pending upload is not a regular file.")
+            open_flags = os.O_RDONLY
+            if hasattr(os, 'O_NOFOLLOW'):
+                open_flags |= os.O_NOFOLLOW
+            fd = os.open(pending_path, open_flags)
+            with os.fdopen(fd, 'rb') as fh:
                 file_bytes = _io.BytesIO(fh.read())
             uploaded_filename_for_record = request.form.get('pending_original_filename', 'upload.xlsx')
         except OSError:
