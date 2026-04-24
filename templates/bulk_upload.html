@@ -270,6 +270,61 @@
             font-size: 14px;
             font-style: italic;
         }
+        /* Equipment classification prompt */
+        .equip-classify-card {
+            border: 2px solid #667eea;
+        }
+
+        .equip-classify-card h2 {
+            color: #667eea;
+        }
+
+        .equip-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            flex-wrap: wrap;
+        }
+
+        .equip-row:last-child { border-bottom: none; }
+
+        .equip-label {
+            flex: 1;
+            min-width: 120px;
+            font-weight: 600;
+            font-size: 15px;
+            color: #333;
+        }
+
+        .equip-select {
+            flex: 2;
+            min-width: 180px;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            background: #fafafa;
+        }
+
+        .equip-select:required:invalid { border-color: #fca5a5; }
+
+        .classify-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 16px;
+            transition: opacity 0.2s;
+        }
+
+        .classify-btn:hover { opacity: 0.9; }
+
     </style>
 </head>
 <body>
@@ -320,6 +375,37 @@
         </div>
         {% endif %}
 
+        {% if unknown_equipment %}
+        <!-- Equipment Classification Prompt -->
+        <div class="card equip-classify-card">
+            <h2>🚚 Classify Your Equipment</h2>
+            <p style="font-size:14px; color:#555; margin-bottom:20px;">
+                We found <strong>{{ unknown_equipment | length }}</strong> piece{{ 's' if unknown_equipment | length != 1 else '' }}
+                of equipment in your file that {{ 'have' if unknown_equipment | length != 1 else 'has' }} not been mapped yet.
+                Select the type for each one so predictions are accurate, then click <em>Save &amp; Process</em>.
+                These mappings will be saved to your account for future uploads.
+            </p>
+            <form method="POST" action="{{ url_for('bulk_upload_page') }}">
+                <input type="hidden" name="pending_file_token" value="{{ pending_file_token }}">
+                <input type="hidden" name="pending_original_filename" value="{{ pending_original_filename }}">
+                {% for equip in unknown_equipment %}
+                <div class="equip-row">
+                    <span class="equip-label">{{ equip }}</span>
+                    <select class="equip-select" name="equip_{{ equip }}" required>
+                        <option value="" disabled selected>-- Select type --</option>
+                        <option value="Truck">Truck (Standard)</option>
+                        <option value="Blended Truck">Blended Truck (has smoothies)</option>
+                        <option value="Kiosk">Kiosk</option>
+                        <option value="Mini">Mini</option>
+                    </select>
+                </div>
+                {% endfor %}
+                <button type="submit" class="classify-btn">Save &amp; Process Upload</button>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if not unknown_equipment %}
         <!-- Upload Form -->
         <div class="card">
             <h2>Upload Events Spreadsheet</h2>
@@ -360,9 +446,9 @@
                         <td></td>
                     </tr>
                     <tr>
-                        <td>Equipment Type <span class="required-badge">required</span></td>
+                        <td>Equipment Type <span class="optional-badge">optional</span></td>
                         <td>Blended Truck</td>
-                        <td></td>
+                        <td>Inferred from Equipment Number if mapped in your account</td>
                     </tr>
                     <tr>
                         <td>Equipment Number <span class="optional-badge">optional</span></td>
@@ -417,6 +503,8 @@
                 schedule/location, and finally a conservative event/schedule/location fallback key.
             </p>
         </div>
+
+        {% endif %}{# end if not unknown_equipment #}
 
         <!-- Upload History -->
         <div class="card">

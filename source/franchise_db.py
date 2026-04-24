@@ -127,6 +127,20 @@ class FranchiseDatabase:
         self._ensure_column_exists(cursor, 'predictions', 'event_status', "TEXT DEFAULT 'predicted_only'")
         self._ensure_column_exists(cursor, 'predictions', 'include_in_training', 'BOOLEAN DEFAULT 0')
         self._ensure_column_exists(cursor, 'predictions', 'scheduled_event_date', 'TEXT')
+
+        # Equipment mappings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS equipment_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                franchise_id TEXT NOT NULL,
+                equipment_name TEXT NOT NULL,
+                equipment_type TEXT NOT NULL,
+                notes TEXT DEFAULT '',
+                created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(franchise_id, equipment_name),
+                FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id)
+            )
+        ''')
         
         conn.commit()
         conn.close()
@@ -639,6 +653,75 @@ class FranchiseDatabase:
         conn.close()
         return [dict(row) for row in rows]
     
+    # ===== EQUIPMENT MAPPING OPERATIONS =====
+
+    def get_equipment_mappings(self, franchise_id: str) -> List[Dict]:
+        """Return all equipment mappings for a franchise."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM equipment_mappings WHERE franchise_id = ? ORDER BY equipment_name',
+            (franchise_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def upsert_equipment_mapping(self, franchise_id: str, equipment_name: str,
+                                  equipment_type: str, notes: str = '') -> bool:
+        """Insert or replace an equipment mapping for a franchise."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                '''INSERT INTO equipment_mappings (franchise_id, equipment_name, equipment_type, notes)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(franchise_id, equipment_name)
+                   DO UPDATE SET equipment_type = excluded.equipment_type,
+                                 notes = excluded.notes''',
+                (franchise_id, equipment_name, equipment_type, notes)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def delete_equipment_mapping(self, franchise_id: str, equipment_name: str) -> bool:
+        """Delete an equipment mapping for a franchise."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'DELETE FROM equipment_mappings WHERE franchise_id = ? AND equipment_name = ?',
+                (franchise_id, equipment_name)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def lookup_equipment_type(self, franchise_id: str, equipment_name: str) -> Optional[str]:
+        """Return the equipment_type for a given equipment name, or None if not found.
+
+        Matching is case-insensitive and ignores leading/trailing whitespace.
+        """
+        if not equipment_name or not equipment_name.strip():
+            return None
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT equipment_type FROM equipment_mappings
+               WHERE franchise_id = ?
+                 AND LOWER(TRIM(equipment_name)) = LOWER(TRIM(?))
+               LIMIT 1''',
+            (franchise_id, equipment_name)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row['equipment_type'] if row else None
+
     # ===== UTILITY OPERATIONS =====
     
     def clear_all_data(self):
