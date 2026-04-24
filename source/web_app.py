@@ -40,9 +40,11 @@ except ImportError:
 try:
     from Kona_AI_ML.franchise_db import FranchiseDatabase
     from Kona_AI_ML.auth import AuthManager, SessionManager
+    from Kona_AI_ML.franchise_model_training import FranchiseModelTrainer
 except ImportError:
     from franchise_db import FranchiseDatabase
     from auth import AuthManager, SessionManager
+    from franchise_model_training import FranchiseModelTrainer
 
 # Use a single source of truth for ZIP cluster prediction (DRY)
 try:
@@ -318,6 +320,8 @@ def is_safe_redirect_target(target: str) -> bool:
 
 # ===== MODEL LOADING =====
 
+prod_models_dir = os.path.join(PARENT_DIR, 'production', 'models')
+
 # Load clean_layers production ensemble via ProductionModelManager
 try:
     from production_model_manager import ProductionModelManager
@@ -350,6 +354,18 @@ except Exception as e:
     MODEL_PATH = None
     cv_mae = 312.66
     cv_std = 50
+
+FRANCHISE_MODEL_TRAINER = None
+if PROD_MANAGER is not None:
+    try:
+        FRANCHISE_MODEL_TRAINER = FranchiseModelTrainer(
+            franchise_db,
+            prod_models_dir,
+            threshold=PROD_MANAGER.FRANCHISE_DATA_THRESHOLD,
+            min_r2=PROD_MANAGER.FRANCHISE_MODEL_CONFIDENCE_R2,
+        )
+    except Exception as trainer_error:
+        print(f"[WARN] Franchise model trainer unavailable: {trainer_error}")
 if cv_mae is not None and cv_std is not None:
     try:
         print(f"CV MAE: {float(cv_mae):.2f} ± {float(cv_std):.2f}")
@@ -459,6 +475,35 @@ print(f"Weather provider initialized: {WEATHER_ENRICHER.weather_provider is not 
 def _get_prod_models_dir():
     return MODEL_PATH or os.path.join(PARENT_DIR, 'production', 'models')
 
+
+def _serialize_feature_snapshot(feature_df):
+    """Serialize a single-row model feature frame for future franchise retraining."""
+    if feature_df is None or getattr(feature_df, 'empty', True):
+        return None
+
+    snapshot = {}
+    for key, value in feature_df.iloc[0].to_dict().items():
+        if pd.isna(value):
+            snapshot[key] = 0.0
+        elif isinstance(value, (np.integer, int)):
+            snapshot[key] = int(value)
+        elif isinstance(value, (np.floating, float)):
+            snapshot[key] = float(value)
+        elif isinstance(value, (np.bool_, bool)):
+            snapshot[key] = int(value)
+        else:
+            snapshot[key] = value
+    return json.dumps(snapshot)
+
+
+def _parse_training_metadata(raw_metadata):
+    if not raw_metadata:
+        return {}
+    try:
+        return json.loads(raw_metadata)
+    except (TypeError, ValueError):
+        return {}
+
 def get_available_models():
     """
     Discover available models from the production deployment.
@@ -489,7 +534,8 @@ def get_available_models():
                     'r2': perf.get('ensemble_r2', 0.305),
                     'training_date': metadata.get('deployment_timestamp', ''),
                     'feature_count': metadata.get('training_metadata', {}).get('total_features', 46),
-                    'status': 'production'
+                    'status': 'production',
+                    'selectable': True,
                 })
                 
                 # Add individual ensemble models
@@ -505,7 +551,8 @@ def get_available_models():
                         'r2': model_perf.get('R2', 0),
                         'training_date': metadata.get('deployment_timestamp', ''),
                         'feature_count': metadata.get('training_metadata', {}).get('total_features', 46),
-                        'status': 'production'
+                        'status': 'production',
+                        'selectable': True,
                     })
         
         except Exception as e:
@@ -534,37 +581,146 @@ def get_available_models():
                     'r2': None,
                     'training_date': '',
                     'feature_count': None,
-                    'status': 'production'
+                    'status': 'production',
+                    'selectable': True,
                 })
     
     return models
 
 
-def get_franchise_available_models(franchise_id):
+def get_franchise_available_models(franchise_id, franchise_progress=None):
     """
     Get available models for a franchise (merged + franchise-specific if exists).
     """
     available_models = get_available_models()
-    
-    # Check for franchise-specific model
-    franchise_model_path = os.path.join(
-        _get_prod_models_dir(), f'franchise_{franchise_id}_model.joblib'
+    progress = franchise_progress or franchise_db.get_franchise_model_progress(
+        franchise_id,
+        threshold=(PROD_MANAGER.FRANCHISE_DATA_THRESHOLD if PROD_MANAGER else 100),
     )
-    
-    if os.path.exists(franchise_model_path):
+    latest_model = progress.get('latest_model')
+
+    if latest_model:
+        metadata = _parse_training_metadata(latest_model.get('training_metadata_json'))
+        metrics = metadata.get('metrics', {})
+        history = metadata.get('training_history') if isinstance(metadata, dict) else None
+        if not isinstance(history, list):
+            history = []
+        if not history and metrics:
+            history = [{
+                'trained_at': metadata.get('trained_at'),
+                'r2': metrics.get('r2'),
+                'cv_mae_per_hour': metrics.get('cv_mae_per_hour') or latest_model.get('cv_mae'),
+                'trainable_event_count': metadata.get('trainable_event_count') or latest_model.get('data_records_count'),
+            }]
+
+        next_retrain_event_count = progress.get('next_retrain_event_count')
+        remaining_to_next_retrain = progress.get('remaining_to_next_retrain', 0)
+        eligible_event_count = progress.get('eligible_event_count', 0)
+        last_trained_event_count = progress.get('last_trained_event_count') or latest_model.get('data_records_count') or 0
+        retrain_goal = max(1, (next_retrain_event_count or (last_trained_event_count + 1)) - last_trained_event_count)
+        retrain_progress_count = max(0, eligible_event_count - last_trained_event_count)
+        retrain_progress_pct = min(100, (retrain_progress_count / retrain_goal) * 100)
         available_models.append({
             'model_id': f'franchise_{franchise_id}',
-            'model_name': f'Franchise {franchise_id} Specific Model',
+            'model_name': 'Your Franchise Model',
             'model_type': 'franchise_specific',
-            'description': f'Custom trained model for this franchise',
+            'description': (
+                f"Auto-refreshes every milestone; next refresh at {next_retrain_event_count} completed events."
+                if next_retrain_event_count else
+                'Custom-trained model using your completed event history.'
+            ),
+            'mae': metrics.get('cv_mae_total'),
+            'cv_mae': latest_model.get('cv_mae'),
+            'cv_std': latest_model.get('cv_std'),
+            'r2': metrics.get('r2', latest_model.get('r2')),
+            'training_date': latest_model.get('training_date', ''),
+            'feature_count': latest_model.get('feature_count', 46),
+            'data_records_count': latest_model.get('data_records_count'),
+            'status': 'production',
+            'selectable': True,
+            'progress_pct': retrain_progress_pct,
+            'progress_event_count': retrain_progress_count,
+            'progress_event_goal': retrain_goal,
+            'progress_event_label': 'events toward next refresh',
+            'eligible_event_count': eligible_event_count,
+            'threshold_event_count': progress.get('threshold_event_count', 100),
+            'remaining_events': 0,
+            'next_retrain_event_count': next_retrain_event_count,
+            'remaining_to_next_retrain': remaining_to_next_retrain,
+            'last_trained_event_count': last_trained_event_count,
+            'training_metrics': metrics,
+            'last_training_message': progress.get('last_training_message'),
+            'training_history': history,
+        })
+    else:
+        ready_with_features = progress.get('ready_with_features', False)
+        threshold_event_count = progress.get('threshold_event_count', 100)
+        eligible_event_count = progress.get('eligible_event_count', 0)
+        trainable_event_count = progress.get('trainable_event_count', 0)
+        if progress.get('ready_for_training') and ready_with_features:
+            status = 'training'
+            description = 'Threshold reached. We are packaging your dedicated model now.'
+            progress_pct = min(100, (trainable_event_count / max(1, threshold_event_count)) * 100)
+            remaining_events = max(0, threshold_event_count - trainable_event_count)
+            progress_event_count = trainable_event_count
+            progress_event_label = 'feature-complete completed events'
+        elif progress.get('ready_for_training'):
+            status = 'calibrating'
+            missing = max(0, threshold_event_count - trainable_event_count)
+            description = (
+                f'Threshold reached with {eligible_event_count} completed events, but only '
+                f'{trainable_event_count} include feature snapshots required for training. '
+                f'We need {missing} more feature-complete completed events.'
+            )
+            progress_pct = min(100, (trainable_event_count / max(1, threshold_event_count)) * 100)
+            remaining_events = missing
+            progress_event_count = trainable_event_count
+            progress_event_label = 'feature-complete completed events'
+        else:
+            status = 'locked'
+            description = 'Unlocks after enough completed events are recorded with actual outcomes.'
+            progress_pct = progress.get('progress_pct', 0)
+            remaining_events = progress.get('remaining_events', 0)
+            progress_event_count = eligible_event_count
+            progress_event_label = 'completed events'
+
+        available_models.append({
+            'model_id': f'franchise_{franchise_id}',
+            'model_name': 'Your Franchise Model',
+            'model_type': 'franchise_specific',
+            'description': description,
             'mae': None,
             'cv_mae': None,
+            'cv_std': None,
             'r2': None,
             'training_date': '',
             'feature_count': 46,
-            'status': 'production'
+            'data_records_count': progress.get('trainable_event_count'),
+            'status': status,
+            'selectable': False,
+            'progress_pct': progress_pct,
+            'progress_event_count': progress_event_count,
+            'progress_event_goal': threshold_event_count,
+            'progress_event_label': progress_event_label,
+            'eligible_event_count': eligible_event_count,
+            'threshold_event_count': threshold_event_count,
+            'remaining_events': remaining_events,
+            'ready_for_training': progress.get('ready_for_training', False),
+            'ready_with_features': ready_with_features,
+            'trainable_event_count': trainable_event_count,
+            'expected_ready_date': progress.get('expected_ready_date'),
+            'last_training_status': progress.get('last_training_status'),
+            'last_training_message': progress.get('last_training_message'),
         })
-    
+
+    # Sort selectable models by R² descending, cv_mae ascending; non-selectable models go to the bottom
+    selectable = [m for m in available_models if m.get('selectable', True)]
+    non_selectable = [m for m in available_models if not m.get('selectable', True)]
+    selectable.sort(key=lambda m: (-(m.get('r2') or 0), (m.get('cv_mae') or float('inf'))))
+    if selectable:
+        selectable[0]['is_recommended'] = True
+    available_models = selectable + non_selectable
+
     return available_models
 
 
@@ -1753,9 +1909,22 @@ def logout():
 def dashboard():
     """Display franchise dashboard."""
     franchise = get_current_franchise()
-    
-    # Get available models from actual production deployment
-    available_models = get_franchise_available_models(franchise['franchise_id'])
+    threshold = PROD_MANAGER.FRANCHISE_DATA_THRESHOLD if PROD_MANAGER else 100
+    franchise_progress = franchise_db.get_franchise_model_progress(franchise['franchise_id'], threshold=threshold)
+    franchise_training_result = None
+    should_train_initial = franchise_progress['ready_for_training'] and not franchise_progress['model_exists']
+    should_retrain = franchise_progress.get('should_retrain_now', False)
+    if FRANCHISE_MODEL_TRAINER and (should_train_initial or should_retrain):
+        franchise_training_result = FRANCHISE_MODEL_TRAINER.ensure_model(
+            franchise['franchise_id'],
+            force=should_retrain,
+        )
+        franchise_progress = franchise_training_result.get('progress') or franchise_db.get_franchise_model_progress(
+            franchise['franchise_id'],
+            threshold=threshold,
+        )
+
+    available_models = get_franchise_available_models(franchise['franchise_id'], franchise_progress)
 
     dashboard_state = _get_dashboard_state(request.args)
     month_window = _dashboard_month_bounds(dashboard_state['month'])
@@ -1806,12 +1975,63 @@ def dashboard():
         default_model = next((m for m in available_models if m['model_id'] == default_model_id), None)
     
     if not default_model and available_models:
-        default_model = available_models[0]
+        default_model = next((model for model in available_models if model.get('selectable', True)), available_models[0])
+
+    franchise_model_popup = None
+    popup_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if franchise_progress['ready_for_training'] and not franchise_progress.get('threshold_popup_shown_at'):
+        if franchise_training_result and franchise_training_result.get('status') == 'awaiting_feature_snapshots':
+            popup_message = franchise_training_result['message']
+        else:
+            popup_message = 'You hit the threshold for a dedicated franchise model. We have started preparing it, and it should be ready by your next dashboard visit.'
+        franchise_model_popup = {
+            'kind': 'threshold',
+            'title': 'Franchise Model Unlocked',
+            'message': popup_message,
+        }
+        franchise_db.update_franchise_model_status(
+            franchise['franchise_id'],
+            threshold_popup_shown_at=popup_timestamp,
+        )
+    elif franchise_progress['model_exists'] and franchise_progress.get('threshold_popup_shown_at') and not franchise_progress.get('model_ready_popup_shown_at'):
+        ready_model = franchise_progress.get('latest_model') or {}
+        ready_metadata = _parse_training_metadata(ready_model.get('training_metadata_json'))
+        ready_metrics = ready_metadata.get('metrics', {}) if isinstance(ready_metadata, dict) else {}
+        ready_r2 = ready_metrics.get('r2')
+        if ready_r2 is None:
+            ready_r2 = ready_model.get('r2')
+        franchise_model_popup = {
+            'kind': 'ready',
+            'title': 'Your Franchise Model Is Ready',
+            'message': 'Your dedicated model is now available in Model Selection with its validation stats.',
+            'cv_mae': ready_model.get('cv_mae'),
+            'r2': ready_r2,
+            'training_rows': ready_model.get('data_records_count'),
+        }
+        franchise_db.update_franchise_model_status(
+            franchise['franchise_id'],
+            model_ready_popup_shown_at=popup_timestamp,
+        )
+    elif franchise_training_result and franchise_training_result.get('status') == 'retrained' and not franchise_progress.get('retrain_popup_shown_at'):
+        franchise_model_popup = {
+            'kind': 'retrained',
+            'title': 'Franchise Model Refreshed',
+            'message': (
+                f"Your model was automatically refreshed using {franchise_progress.get('last_trained_event_count', 0)} completed events. "
+                f"Next refresh target: {franchise_progress.get('next_retrain_event_count', 'TBD')} completed events."
+            ),
+        }
+        franchise_db.update_franchise_model_status(
+            franchise['franchise_id'],
+            retrain_popup_shown_at=popup_timestamp,
+        )
     
     return render_template('dashboard.html',
                           franchise_name=franchise['franchise_name'],
                           models=available_models,
                           default_model=default_model,
+                          franchise_model_progress=franchise_progress,
+                          franchise_model_popup=franchise_model_popup,
                           recent_predictions=recent_predictions,
                           realized_count=dashboard_stats['realized_count'],
                           realized_total=dashboard_stats['realized_total'],
@@ -1918,7 +2138,8 @@ def select_model():
     
     # Verify model is actually available
     available_models = get_franchise_available_models(franchise['franchise_id'])
-    if not any(m['model_id'] == model_id for m in available_models):
+    selected_model = next((m for m in available_models if m['model_id'] == model_id), None)
+    if not selected_model or not selected_model.get('selectable', True):
         return redirect(url_for('dashboard', month=month_key))
     
     # Update default model in database
@@ -2131,6 +2352,7 @@ def predict():
             event_status=submitted_status,
             include_in_training=actual_total is not None,
             scheduled_event_date=event_date_str,
+            event_features_json=_serialize_feature_snapshot(feature_df),
         )
         if not saved:
             print("[WARN] Failed to save prediction record")
@@ -2789,7 +3011,7 @@ def bulk_upload_page():
         conn = franchise_db.get_connection()
         cur = conn.cursor()
         cur.execute(
-            '''SELECT prediction_id, bulk_dedup_key, actual_total_net_sales
+            '''SELECT prediction_id, bulk_dedup_key, actual_total_net_sales, event_features_json
                FROM predictions
                WHERE franchise_id = ?
                  AND bulk_dedup_key IS NOT NULL
@@ -2803,6 +3025,7 @@ def bulk_upload_page():
                 existing_predictions_by_key[key] = {
                     'prediction_id': row['prediction_id'],
                     'actual_total_net_sales': row['actual_total_net_sales'],
+                    'has_feature_snapshot': bool(row['event_features_json'] and str(row['event_features_json']).strip()),
                 }
         conn.close()
     except Exception:
@@ -2938,6 +3161,7 @@ def bulk_upload_page():
                 pass
 
         existing = existing_predictions_by_key.get(dedup_key)
+        existing_prediction_id_for_backfill = None
         if existing:
             updated_existing_outcome = False
             if event_date < today and net_sales and net_sales > 0 and existing.get('actual_total_net_sales') is None:
@@ -2948,9 +3172,14 @@ def bulk_upload_page():
                 )
             if updated_existing_outcome:
                 outcomes += 1
-            skipped += 1
-            seen_file_fingerprints.add(row_fingerprint)
-            continue
+            if existing.get('has_feature_snapshot'):
+                skipped += 1
+                seen_file_fingerprints.add(row_fingerprint)
+                continue
+
+            # Existing record is missing feature snapshot. Recompute features and
+            # backfill the existing row instead of inserting a duplicate.
+            existing_prediction_id_for_backfill = existing.get('prediction_id')
 
         # Build event_name if blank
         if not event_name:
@@ -3006,6 +3235,36 @@ def bulk_upload_page():
             errors.append(f'Row {row_num}: Prediction failed: {pred_err}')
             continue
 
+        if existing_prediction_id_for_backfill:
+            try:
+                conn = franchise_db.get_connection()
+                cur = conn.cursor()
+                cur.execute(
+                    '''
+                    UPDATE predictions
+                    SET event_features_json = ?,
+                        include_in_training = CASE
+                            WHEN actual_total_net_sales IS NOT NULL THEN 1
+                            ELSE include_in_training
+                        END
+                    WHERE prediction_id = ? AND franchise_id = ?
+                    ''',
+                    (
+                        _serialize_feature_snapshot(feature_df),
+                        existing_prediction_id_for_backfill,
+                        franchise_id,
+                    ),
+                )
+                conn.commit()
+                conn.close()
+            except Exception as backfill_err:
+                errors.append(f'Row {row_num}: Could not backfill feature snapshot: {backfill_err}')
+
+            skipped += 1
+            seen_file_fingerprints.add(row_fingerprint)
+            existing_predictions_by_key[dedup_key]['has_feature_snapshot'] = True
+            continue
+
         if event_date < today:
             row_status = 'completed' if net_sales and net_sales > 0 else 'needs_outcome'
         else:
@@ -3026,6 +3285,7 @@ def bulk_upload_page():
             event_status=row_status,
             include_in_training=False,
             scheduled_event_date=event_date_str,
+            event_features_json=_serialize_feature_snapshot(feature_df),
         )
         if not saved:
             errors.append(f'Row {row_num}: Could not save prediction record')
@@ -3048,6 +3308,7 @@ def bulk_upload_page():
         existing_predictions_by_key[dedup_key] = {
             'prediction_id': prediction_id,
             'actual_total_net_sales': None,
+            'has_feature_snapshot': True,
         }
         added += 1
 

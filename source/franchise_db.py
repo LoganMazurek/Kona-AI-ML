@@ -7,7 +7,7 @@ for franchises, models, sessions, and prediction tracking.
 import sqlite3
 import os
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class FranchiseDatabase:
@@ -117,6 +117,24 @@ class FranchiseDatabase:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS franchise_model_status (
+                franchise_id TEXT PRIMARY KEY,
+                threshold_event_count INTEGER DEFAULT 100,
+                last_trained_event_count INTEGER,
+                next_retrain_event_count INTEGER,
+                threshold_reached_at TIMESTAMP,
+                threshold_popup_shown_at TIMESTAMP,
+                model_ready_popup_shown_at TIMESTAMP,
+                retrain_popup_shown_at TIMESTAMP,
+                last_training_attempt_at TIMESTAMP,
+                last_training_status TEXT,
+                last_training_message TEXT,
+                expected_ready_date TEXT,
+                FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id)
+            )
+        ''')
+
         # Ensure new columns exist for older databases
         self._ensure_column_exists(cursor, 'franchises', 'target_net_sales_per_hour', 'REAL')
         self._ensure_column_exists(cursor, 'predictions', 'duration_hours', 'REAL')
@@ -127,6 +145,19 @@ class FranchiseDatabase:
         self._ensure_column_exists(cursor, 'predictions', 'event_status', "TEXT DEFAULT 'predicted_only'")
         self._ensure_column_exists(cursor, 'predictions', 'include_in_training', 'BOOLEAN DEFAULT 0')
         self._ensure_column_exists(cursor, 'predictions', 'scheduled_event_date', 'TEXT')
+        self._ensure_column_exists(cursor, 'predictions', 'event_features_json', 'TEXT')
+        self._ensure_column_exists(cursor, 'models', 'training_metadata_json', 'TEXT')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'threshold_event_count', 'INTEGER DEFAULT 100')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'last_trained_event_count', 'INTEGER')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'next_retrain_event_count', 'INTEGER')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'threshold_reached_at', 'TIMESTAMP')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'threshold_popup_shown_at', 'TIMESTAMP')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'model_ready_popup_shown_at', 'TIMESTAMP')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'retrain_popup_shown_at', 'TIMESTAMP')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'last_training_attempt_at', 'TIMESTAMP')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'last_training_status', 'TEXT')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'last_training_message', 'TEXT')
+        self._ensure_column_exists(cursor, 'franchise_model_status', 'expected_ready_date', 'TEXT')
 
         # Equipment mappings table
         cursor.execute('''
@@ -148,7 +179,7 @@ class FranchiseDatabase:
     # ===== FRANCHISE OPERATIONS =====
     
     def create_franchise(self, franchise_id: str, franchise_name: str, email: str, 
-                        password_hash: str, target_net_sales_per_hour: float = None) -> bool:
+                        password_hash: str, target_net_sales_per_hour: Optional[float] = None) -> bool:
         """
         Create a new franchise record.
         
@@ -244,10 +275,11 @@ class FranchiseDatabase:
     # ===== MODEL OPERATIONS =====
     
     def create_model(self, model_id: str, franchise_id: str, model_name: str,
-                    model_path: str, model_type: str = None, 
-                    training_date: datetime = None, cv_mae: float = None, 
-                    cv_std: float = None, feature_count: int = None,
-                    data_records_count: int = None, is_default: bool = False) -> bool:
+                    model_path: str, model_type: Optional[str] = None, 
+                    training_date: Optional[datetime] = None, cv_mae: Optional[float] = None, 
+                    cv_std: Optional[float] = None, feature_count: Optional[int] = None,
+                    data_records_count: Optional[int] = None, is_default: bool = False,
+                    training_metadata_json: Optional[str] = None) -> bool:
         """
         Create a new model record.
         
@@ -273,14 +305,53 @@ class FranchiseDatabase:
             cursor.execute('''
                 INSERT INTO models 
                 (model_id, franchise_id, model_name, model_path, model_type,
-                 training_date, cv_mae, cv_std, feature_count, data_records_count, is_default)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 training_date, cv_mae, cv_std, feature_count, data_records_count, is_default,
+                 training_metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (model_id, franchise_id, model_name, model_path, model_type,
-                  training_date, cv_mae, cv_std, feature_count, data_records_count, is_default))
+                  training_date, cv_mae, cv_std, feature_count, data_records_count, is_default,
+                  training_metadata_json))
             conn.commit()
             conn.close()
             return True
         except sqlite3.IntegrityError:
+            return False
+
+    def upsert_model(self, model_id: str, franchise_id: str, model_name: str,
+                    model_path: str, model_type: Optional[str] = None,
+                    training_date: Optional[datetime] = None, cv_mae: Optional[float] = None,
+                    cv_std: Optional[float] = None, feature_count: Optional[int] = None,
+                    data_records_count: Optional[int] = None, is_default: bool = False,
+                    training_metadata_json: Optional[str] = None) -> bool:
+        """Create or update a model record."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO models
+                (model_id, franchise_id, model_name, model_path, model_type,
+                 training_date, cv_mae, cv_std, feature_count, data_records_count, is_default,
+                 training_metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(model_id) DO UPDATE SET
+                    franchise_id = excluded.franchise_id,
+                    model_name = excluded.model_name,
+                    model_path = excluded.model_path,
+                    model_type = excluded.model_type,
+                    training_date = excluded.training_date,
+                    cv_mae = excluded.cv_mae,
+                    cv_std = excluded.cv_std,
+                    feature_count = excluded.feature_count,
+                    data_records_count = excluded.data_records_count,
+                    is_default = excluded.is_default,
+                    training_metadata_json = excluded.training_metadata_json
+            ''', (model_id, franchise_id, model_name, model_path, model_type,
+                  training_date, cv_mae, cv_std, feature_count, data_records_count, is_default,
+                  training_metadata_json))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
             return False
     
     def get_model(self, model_id: str) -> Optional[Dict]:
@@ -330,6 +401,188 @@ class FranchiseDatabase:
         
         conn.close()
         return dict(row) if row else None
+
+    def get_latest_model_by_type(self, franchise_id: str, model_type: str) -> Optional[Dict]:
+        """Get the latest model for a franchise by type."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM models
+            WHERE franchise_id = ? AND model_type = ?
+            ORDER BY COALESCE(training_date, created_date) DESC, created_date DESC
+            LIMIT 1
+        ''', (franchise_id, model_type))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def update_franchise_model_status(self, franchise_id: str, **fields: Any) -> bool:
+        """Upsert franchise model status fields for a franchise."""
+        allowed_fields = {
+            'threshold_event_count',
+            'last_trained_event_count',
+            'next_retrain_event_count',
+            'threshold_reached_at',
+            'threshold_popup_shown_at',
+            'model_ready_popup_shown_at',
+            'retrain_popup_shown_at',
+            'last_training_attempt_at',
+            'last_training_status',
+            'last_training_message',
+            'expected_ready_date',
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed_fields}
+        if not updates:
+            return True
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT OR IGNORE INTO franchise_model_status (franchise_id) VALUES (?)',
+                (franchise_id,)
+            )
+            assignments = ', '.join(f'{column} = ?' for column in updates.keys())
+            params = list(updates.values()) + [franchise_id]
+            cursor.execute(
+                f'''UPDATE franchise_model_status
+                    SET {assignments}
+                    WHERE franchise_id = ?''',
+                params
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def get_franchise_model_progress(self, franchise_id: str, threshold: int = 100) -> Dict[str, Any]:
+        """Return dashboard-ready franchise model progress and latest status."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT
+                COUNT(CASE
+                    WHEN is_test = 0
+                     AND include_in_training = 1
+                     AND actual_total_net_sales IS NOT NULL
+                    THEN 1 END) AS eligible_event_count,
+                COUNT(CASE
+                    WHEN is_test = 0
+                     AND include_in_training = 1
+                     AND actual_total_net_sales IS NOT NULL
+                     AND event_features_json IS NOT NULL
+                     AND TRIM(event_features_json) != ''
+                    THEN 1 END) AS trainable_event_count
+            FROM predictions
+            WHERE franchise_id = ?
+            ''',
+            (franchise_id,)
+        )
+        counts = cursor.fetchone()
+
+        cursor.execute(
+            '''SELECT * FROM franchise_model_status WHERE franchise_id = ?''',
+            (franchise_id,)
+        )
+        status_row = cursor.fetchone()
+        conn.close()
+
+        eligible_event_count = int((counts['eligible_event_count'] if counts else 0) or 0)
+        trainable_event_count = int((counts['trainable_event_count'] if counts else 0) or 0)
+        effective_threshold = max(1, int((dict(status_row)['threshold_event_count'] if status_row and status_row['threshold_event_count'] else threshold)))
+        progress_pct = min(100.0, round((eligible_event_count / effective_threshold) * 100, 1))
+        remaining_events = max(0, effective_threshold - eligible_event_count)
+        ready_for_training = eligible_event_count >= effective_threshold
+        ready_with_features = trainable_event_count >= effective_threshold
+
+        if ready_for_training and status_row is None:
+            self.update_franchise_model_status(
+                franchise_id,
+                threshold_event_count=effective_threshold,
+                threshold_reached_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            )
+            status_dict = self.get_franchise_model_progress(franchise_id, threshold)
+            return status_dict
+
+        if ready_for_training and status_row and not status_row['threshold_reached_at']:
+            self.update_franchise_model_status(
+                franchise_id,
+                threshold_reached_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            )
+            status_row = None
+
+        latest_model = self.get_latest_model_by_type(franchise_id, 'franchise_specific')
+        status = dict(status_row) if status_row else {}
+
+        if status.get('last_trained_event_count') is not None:
+            last_trained_event_count = int(status.get('last_trained_event_count') or 0)
+        elif latest_model and latest_model.get('data_records_count') is not None:
+            last_trained_event_count = int(latest_model.get('data_records_count') or 0)
+        else:
+            last_trained_event_count = 0
+
+        next_retrain_event_count = int(status.get('next_retrain_event_count') or 0)
+        if ready_for_training:
+            if not next_retrain_event_count or next_retrain_event_count <= last_trained_event_count:
+                next_retrain_event_count = self._next_retrain_target(last_trained_event_count, effective_threshold)
+        else:
+            next_retrain_event_count = effective_threshold
+
+        if status.get('next_retrain_event_count') != next_retrain_event_count:
+            self.update_franchise_model_status(
+                franchise_id,
+                threshold_event_count=effective_threshold,
+                next_retrain_event_count=next_retrain_event_count,
+            )
+
+        remaining_to_next_retrain = max(0, next_retrain_event_count - eligible_event_count)
+        should_retrain_now = bool(
+            latest_model
+            and eligible_event_count >= next_retrain_event_count
+            and trainable_event_count >= next_retrain_event_count
+        )
+
+        if should_retrain_now and status.get('retrain_popup_shown_at'):
+            # Clear popup marker when a new retrain cycle is due.
+            self.update_franchise_model_status(franchise_id, retrain_popup_shown_at=None)
+
+        return {
+            'threshold_event_count': effective_threshold,
+            'eligible_event_count': eligible_event_count,
+            'trainable_event_count': trainable_event_count,
+            'progress_pct': progress_pct,
+            'remaining_events': remaining_events,
+            'ready_for_training': ready_for_training,
+            'ready_with_features': ready_with_features,
+            'threshold_reached_at': status.get('threshold_reached_at'),
+            'threshold_popup_shown_at': status.get('threshold_popup_shown_at'),
+            'model_ready_popup_shown_at': status.get('model_ready_popup_shown_at'),
+            'retrain_popup_shown_at': status.get('retrain_popup_shown_at'),
+            'last_training_attempt_at': status.get('last_training_attempt_at'),
+            'last_training_status': status.get('last_training_status'),
+            'last_training_message': status.get('last_training_message'),
+            'expected_ready_date': status.get('expected_ready_date'),
+            'last_trained_event_count': last_trained_event_count,
+            'next_retrain_event_count': next_retrain_event_count,
+            'remaining_to_next_retrain': remaining_to_next_retrain,
+            'should_retrain_now': should_retrain_now,
+            'model_exists': latest_model is not None,
+            'latest_model': latest_model,
+        }
+
+    @staticmethod
+    def _next_retrain_target(last_trained_event_count: int, threshold: int) -> int:
+        """Return the next event-count target for automatic retraining."""
+        milestones = [threshold, 175, 250, 350, 500]
+        trained = max(0, int(last_trained_event_count or 0))
+        for milestone in milestones:
+            if milestone > trained:
+                return milestone
+
+        # After 500 events, retrain every +250 events.
+        return 500 + (((trained - 500) // 250) + 1) * 250
     
     # ===== SESSION OPERATIONS =====
     
@@ -428,7 +681,8 @@ class FranchiseDatabase:
                          actual_total_net_sales: Optional[float] = None,
                          event_status: str = 'predicted_only',
                          include_in_training: bool = False,
-                         scheduled_event_date: Optional[str] = None) -> bool:
+                         scheduled_event_date: Optional[str] = None,
+                         event_features_json: Optional[str] = None) -> bool:
         """Record a prediction for history tracking."""
         try:
             actual_per_hour = None
@@ -442,20 +696,45 @@ class FranchiseDatabase:
                  predicted_revenue_per_hour, predicted_total_revenue,
                  confidence_lower, confidence_upper, actual_total_net_sales,
                      actual_revenue_per_hour, actual_updated_timestamp, is_test,
-                     event_status, include_in_training, scheduled_event_date)
+                     event_status, include_in_training, scheduled_event_date,
+                     event_features_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END,
-                        ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?)
             ''', (prediction_id, franchise_id, model_id, event_name, duration_hours,
                   predicted_revenue_per_hour, predicted_total_revenue,
                   confidence_lower, confidence_upper, actual_total_net_sales,
                     actual_per_hour, actual_total_net_sales, int(is_test),
-                    event_status, int(include_in_training), scheduled_event_date))
+                    event_status, int(include_in_training), scheduled_event_date,
+                    event_features_json))
             conn.commit()
             conn.close()
             return True
         except Exception:
             return False
+
+    def get_franchise_training_examples(self, franchise_id: str) -> List[Dict[str, Any]]:
+        """Return completed franchise events with stored feature snapshots."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT prediction_id, duration_hours, actual_total_net_sales, event_features_json,
+                   scheduled_event_date, actual_updated_timestamp, created_timestamp
+            FROM predictions
+            WHERE franchise_id = ?
+              AND is_test = 0
+              AND include_in_training = 1
+              AND actual_total_net_sales IS NOT NULL
+              AND event_features_json IS NOT NULL
+              AND TRIM(event_features_json) != ''
+            ORDER BY COALESCE(scheduled_event_date, actual_updated_timestamp, created_timestamp) ASC
+            ''',
+            (franchise_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
     
     def get_recent_predictions(self, franchise_id: str, limit: int = 10) -> List[Dict]:
         """Get recent predictions for a franchise."""
