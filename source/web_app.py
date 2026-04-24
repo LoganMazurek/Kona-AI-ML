@@ -2383,8 +2383,17 @@ def bulk_upload_page():
                          'errors': ['Invalid pending upload token.']},
             )
 
-        pending_dir = os.path.join(tempfile.gettempdir(), 'kona_pending_uploads')
-        pending_path = os.path.join(pending_dir, f'{pending_token}_{franchise_id}.tmp')
+        pending_dir = os.path.realpath(os.path.join(tempfile.gettempdir(), 'kona_pending_uploads'))
+        pending_path = os.path.realpath(
+            os.path.join(pending_dir, f'{pending_token}_{franchise_id}.tmp')
+        )
+        if os.path.commonpath([pending_dir, pending_path]) != pending_dir:
+            return render_template(
+                'bulk_upload.html',
+                recent_uploads=recent_uploads,
+                results={'added': 0, 'outcomes': 0, 'skipped': 0,
+                         'errors': ['Invalid pending upload token.']},
+            )
         if not os.path.exists(pending_path):
             return render_template(
                 'bulk_upload.html',
