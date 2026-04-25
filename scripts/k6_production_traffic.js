@@ -21,8 +21,26 @@ const predictAuthErrors = new Counter('predict_auth_errors');
 const predictServerErrors = new Counter('predict_server_errors');
 
 let loggedIn = false;
+let sessionToken = '';
 let predictFailureSamples = 0;
 const MAX_PREDICT_FAILURE_SAMPLES = 5;
+
+function parseSessionToken(setCookieHeader) {
+  if (!setCookieHeader) {
+    return '';
+  }
+  const match = setCookieHeader.match(/(?:^|[;,\s])franchise_session=([^;]+)/);
+  return match && match[1] ? match[1] : '';
+}
+
+function authHeaders() {
+  if (!sessionToken) {
+    return {};
+  }
+  return {
+    Cookie: `franchise_session=${sessionToken}`,
+  };
+}
 
 export const options = {
   scenarios: {
@@ -67,7 +85,7 @@ function think(minSeconds, maxSeconds) {
 }
 
 function ensureLoggedIn() {
-  if (loggedIn) {
+  if (loggedIn && sessionToken) {
     return true;
   }
 
@@ -93,8 +111,9 @@ function ensureLoggedIn() {
     'login sets session cookie': (r) => (r.headers['Set-Cookie'] || '').includes('franchise_session='),
   });
 
+  sessionToken = parseSessionToken(res.headers['Set-Cookie']);
   loginFailureRate.add(!ok);
-  loggedIn = ok;
+  loggedIn = ok && !!sessionToken;
   return ok;
 }
 
@@ -118,6 +137,7 @@ function browseAuthenticated() {
   group('authenticated browse', () => {
     const dash = http.get(`${BASE_URL}/dashboard`, {
       redirects: 0,
+      headers: authHeaders(),
       tags: { name: 'GET /dashboard' },
     });
     check(dash, {
@@ -127,6 +147,7 @@ function browseAuthenticated() {
 
     const home = http.get(`${BASE_URL}/`, {
       redirects: 0,
+      headers: authHeaders(),
       tags: { name: 'GET / (auth)' },
     });
     check(home, {
@@ -135,6 +156,7 @@ function browseAuthenticated() {
 
     if (dash.status === 302 || dash.status === 301 || home.status === 302 || home.status === 301) {
       loggedIn = false;
+      sessionToken = '';
     }
   });
 }
@@ -159,6 +181,7 @@ function submitPrediction() {
   };
 
   const res = http.post(`${BASE_URL}/predict`, payload, {
+    headers: authHeaders(),
     tags: { name: 'POST /predict' },
     timeout: '45s',
   });
@@ -182,6 +205,7 @@ function submitPrediction() {
     if (res.status === 401 || res.status === 403) {
       predictAuthErrors.add(1);
       loggedIn = false;
+      sessionToken = '';
     }
     if (res.status >= 500) {
       predictServerErrors.add(1);
