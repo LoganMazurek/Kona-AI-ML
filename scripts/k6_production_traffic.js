@@ -7,6 +7,12 @@ const LOGIN_ID = __ENV.LOGIN_ID || '';
 const LOGIN_PASSWORD = __ENV.LOGIN_PASSWORD || '';
 const ENABLE_PREDICT = (__ENV.ENABLE_PREDICT || 'true').toLowerCase() === 'true';
 const PREDICT_SHARE = Number(__ENV.PREDICT_SHARE || '0.35');
+const PEAK_VUS = Number(__ENV.PEAK_VUS || '25');
+const PRE_PEAK_VUS = Math.max(15, Math.floor(PEAK_VUS * 0.8));
+const HTTP_P95_MS = Number(__ENV.HTTP_P95_MS || '1200');
+const HTTP_P99_MS = Number(__ENV.HTTP_P99_MS || '2000');
+const PREDICT_P95_MS = Number(__ENV.PREDICT_P95_MS || '2500');
+const PREDICT_P99_MS = Number(__ENV.PREDICT_P99_MS || '3500');
 
 const INDUSTRIES = ['Festival', 'Corporate', 'Community', 'Education', 'Private'];
 const EQUIPMENT = ['truck', 'blended truck', 'kiosk', 'mini'];
@@ -48,21 +54,22 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 1,
       stages: [
-        { duration: '2m', target: 2 },
-        { duration: '3m', target: 5 },
-        { duration: '5m', target: 10 },
-        { duration: '3m', target: 15 },
-        { duration: '2m', target: 0 },
+        { duration: '2m', target: 3 },
+        { duration: '3m', target: 8 },
+        { duration: '4m', target: 15 },
+        { duration: '3m', target: PRE_PEAK_VUS },
+        { duration: '2m', target: PEAK_VUS },
+        { duration: '1m', target: 0 },
       ],
       gracefulRampDown: '30s',
     },
   },
   thresholds: {
     http_req_failed: ['rate<0.02'],
-    http_req_duration: ['p(95)<1200'],
+    http_req_duration: [`p(95)<${HTTP_P95_MS}`, `p(99)<${HTTP_P99_MS}`],
     login_failures: ['rate<0.02'],
     predict_failures: ['rate<0.03'],
-    prediction_duration: ['p(95)<2500'],
+    prediction_duration: [`p(95)<${PREDICT_P95_MS}`, `p(99)<${PREDICT_P99_MS}`],
   },
 };
 
