@@ -1,6 +1,6 @@
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
-import { Trend, Rate } from 'k6/metrics';
+import { Trend, Rate, Counter } from 'k6/metrics';
 
 const BASE_URL = (__ENV.BASE_URL || 'https://loganmazurek.com').replace(/\/$/, '');
 const LOGIN_ID = __ENV.LOGIN_ID || '';
@@ -16,8 +16,13 @@ const ZIPS = ['60540', '60504', '60564', '60435', '60431'];
 const predictionDuration = new Trend('prediction_duration', true);
 const loginFailureRate = new Rate('login_failures');
 const predictFailureRate = new Rate('predict_failures');
+const predictHttpErrors = new Counter('predict_http_errors');
+const predictAuthErrors = new Counter('predict_auth_errors');
+const predictServerErrors = new Counter('predict_server_errors');
 
 let loggedIn = false;
+let predictFailureSamples = 0;
+const MAX_PREDICT_FAILURE_SAMPLES = 5;
 
 export const options = {
   scenarios: {
@@ -77,14 +82,15 @@ function ensureLoggedIn() {
       password: LOGIN_PASSWORD,
     },
     {
-      redirects: 1,
+      // Keep redirects disabled so auth failures do not look like successful logins.
+      redirects: 0,
       tags: { name: 'POST /login' },
     }
   );
 
   const ok = check(res, {
-    'login returns 200 after redirect': (r) => r.status === 200,
-    'login response is html': (r) => (r.headers['Content-Type'] || '').includes('text/html'),
+    'login returns redirect': (r) => r.status === 302 || r.status === 303,
+    'login sets session cookie': (r) => (r.headers['Set-Cookie'] || '').includes('franchise_session='),
   });
 
   loginFailureRate.add(!ok);
@@ -110,16 +116,26 @@ function browseUnauthenticated() {
 
 function browseAuthenticated() {
   group('authenticated browse', () => {
-    const dash = http.get(`${BASE_URL}/dashboard`, { tags: { name: 'GET /dashboard' } });
+    const dash = http.get(`${BASE_URL}/dashboard`, {
+      redirects: 0,
+      tags: { name: 'GET /dashboard' },
+    });
     check(dash, {
-      'dashboard 200': (r) => r.status === 200,
+      'dashboard authenticated 200': (r) => r.status === 200,
     });
     think(0.5, 1.5);
 
-    const home = http.get(`${BASE_URL}/`, { tags: { name: 'GET / (auth)' } });
+    const home = http.get(`${BASE_URL}/`, {
+      redirects: 0,
+      tags: { name: 'GET / (auth)' },
+    });
     check(home, {
       'auth home 200': (r) => r.status === 200,
     });
+
+    if (dash.status === 302 || dash.status === 301 || home.status === 302 || home.status === 301) {
+      loggedIn = false;
+    }
   });
 }
 
@@ -160,6 +176,23 @@ function submitPrediction() {
       }
     },
   });
+
+  if (!ok) {
+    predictHttpErrors.add(1);
+    if (res.status === 401 || res.status === 403) {
+      predictAuthErrors.add(1);
+      loggedIn = false;
+    }
+    if (res.status >= 500) {
+      predictServerErrors.add(1);
+    }
+
+    if (predictFailureSamples < MAX_PREDICT_FAILURE_SAMPLES) {
+      const body = (res.body || '').toString().slice(0, 500);
+      console.error(`predict failure sample status=${res.status} body=${body}`);
+      predictFailureSamples += 1;
+    }
+  }
 
   predictFailureRate.add(!ok);
 }
