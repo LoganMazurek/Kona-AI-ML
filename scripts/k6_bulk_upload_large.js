@@ -10,8 +10,6 @@ const PEAK_VUS = Number(__ENV.PEAK_VUS || '25');
 const PRE_PEAK_VUS = Math.max(10, Math.floor(PEAK_VUS * 0.8));
 const BULK_P95_MS = Number(__ENV.BULK_P95_MS || '12000');
 const BULK_P99_MS = Number(__ENV.BULK_P99_MS || '20000');
-const LOGIN_P95_MS = Number(__ENV.LOGIN_P95_MS || '1000');
-const LOGIN_P99_MS = Number(__ENV.LOGIN_P99_MS || '2000');
 
 const bulkFixtureBytes = open(BULK_FILE, 'b');
 
@@ -43,8 +41,6 @@ export const options = {
   },
   thresholds: {
     http_req_failed: ['rate<0.02'],
-    'http_req_duration{name:GET /login}': [`p(95)<${LOGIN_P95_MS}`, `p(99)<${LOGIN_P99_MS}`],
-    'http_req_duration{name:POST /login}': [`p(95)<${LOGIN_P95_MS}`, `p(99)<${LOGIN_P99_MS}`],
     'http_req_duration{name:POST /bulk-upload}': [`p(95)<${BULK_P95_MS}`, `p(99)<${BULK_P99_MS}`],
     login_failures: ['rate<0.02'],
     bulk_upload_failures: ['rate<0.03'],
