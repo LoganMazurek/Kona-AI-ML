@@ -41,10 +41,12 @@ try:
     from Kona_AI_ML.franchise_db import FranchiseDatabase
     from Kona_AI_ML.auth import AuthManager, SessionManager
     from Kona_AI_ML.franchise_model_training import FranchiseModelTrainer
+    from Kona_AI_ML.email_utils import send_password_reset_email, send_username_reminder_email
 except ImportError:
     from franchise_db import FranchiseDatabase
     from auth import AuthManager, SessionManager
     from franchise_model_training import FranchiseModelTrainer
+    from email_utils import send_password_reset_email, send_username_reminder_email
 
 # Use a single source of truth for ZIP cluster prediction (DRY)
 try:
@@ -1902,6 +1904,89 @@ def logout():
     response = make_response(redirect(url_for('login_page')))
     response.delete_cookie(SessionManager.get_session_cookie_name())
     return response
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password_page():
+    """Request a password-reset email."""
+    if request.method == 'GET':
+        return render_template('forgot_password.html')
+
+    email = request.form.get('email', '').strip()
+    if not email:
+        return render_template('forgot_password.html', error='Please enter your email address')
+
+    # Always show the same success message to avoid leaking whether an email exists
+    success = 'If an account with that email exists, a reset link has been sent.'
+
+    franchise = franchise_db.get_franchise_by_email(email)
+    if not franchise:
+        return render_template('forgot_password.html', success=success)
+
+    token = auth_manager.generate_password_reset_token(franchise['franchise_id'])
+    if token:
+        reset_url = url_for('reset_password_page', token=token, _external=True)
+        try:
+            send_password_reset_email(email, franchise['franchise_id'], reset_url)
+        except Exception:
+            # Don't expose SMTP failures to the user
+            pass
+
+    return render_template('forgot_password.html', success=success)
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password_page(token: str):
+    """Validate reset token and allow the user to set a new password."""
+    if request.method == 'GET':
+        record = franchise_db.get_password_reset_token(token)
+        if not record:
+            return render_template('reset_password.html', error='This reset link is invalid or has expired.')
+        return render_template('reset_password.html', token=token)
+
+    password = request.form.get('password', '').strip()
+    confirm = request.form.get('confirm_password', '').strip()
+
+    if not password or not confirm:
+        return render_template('reset_password.html', token=token, error='Please fill in both password fields.')
+
+    if len(password) < 8:
+        return render_template('reset_password.html', token=token, error='Password must be at least 8 characters.')
+
+    if password != confirm:
+        return render_template('reset_password.html', token=token, error='Passwords do not match.')
+
+    franchise_id, err = auth_manager.validate_and_consume_reset_token(token)
+    if err or not franchise_id:
+        return render_template('reset_password.html', error=err or 'Reset link is invalid or has expired.')
+
+    if not auth_manager.update_password(franchise_id, password):
+        return render_template('reset_password.html', token=token, error='Could not update password. Please try again.')
+
+    return render_template('login.html', info='Your password has been updated. Please log in.')
+
+
+@app.route('/forgot-username', methods=['GET', 'POST'])
+def forgot_username_page():
+    """Send a franchise-ID reminder email."""
+    if request.method == 'GET':
+        return render_template('forgot_username.html')
+
+    email = request.form.get('email', '').strip()
+    if not email:
+        return render_template('forgot_username.html', error='Please enter your email address.')
+
+    success = 'If an account with that email exists, your login ID has been sent.'
+
+    franchise = franchise_db.get_franchise_by_email(email)
+    if franchise:
+        try:
+            send_username_reminder_email(email, franchise['franchise_id'], franchise['franchise_name'])
+        except Exception:
+            pass
+
+    return render_template('forgot_username.html', success=success)
+
 
 
 @app.route('/dashboard')

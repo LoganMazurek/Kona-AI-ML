@@ -172,6 +172,17 @@ class FranchiseDatabase:
                 FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id)
             )
         ''')
+
+        # Password reset tokens table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                token TEXT PRIMARY KEY,
+                franchise_id TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id)
+            )
+        ''')
         
         conn.commit()
         conn.close()
@@ -1146,6 +1157,64 @@ class FranchiseDatabase:
         row = cursor.fetchone()
         conn.close()
         return row['equipment_type'] if row else None
+
+    # ===== PASSWORD RESET OPERATIONS =====
+
+    def create_password_reset_token(self, token: str, franchise_id: str, expires_at: datetime) -> bool:
+        """Store a password reset token."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            # Remove any existing tokens for this franchise first
+            cursor.execute('DELETE FROM password_reset_tokens WHERE franchise_id = ?', (franchise_id,))
+            cursor.execute(
+                'INSERT INTO password_reset_tokens (token, franchise_id, expires_at) VALUES (?, ?, ?)',
+                (token, franchise_id, expires_at.isoformat())
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def get_password_reset_token(self, token: str) -> Optional[Dict]:
+        """Retrieve a reset token record if it exists and has not expired."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM password_reset_tokens WHERE token = ? AND expires_at > ?',
+            (token, datetime.now(timezone.utc).isoformat())
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def delete_password_reset_token(self, token: str) -> bool:
+        """Delete a password reset token (after use or expiry)."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM password_reset_tokens WHERE token = ?', (token,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def update_franchise_password(self, franchise_id: str, new_password_hash: str) -> bool:
+        """Update password hash for a franchise."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'UPDATE franchises SET password_hash = ? WHERE franchise_id = ?',
+                (new_password_hash, franchise_id)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
 
     # ===== UTILITY OPERATIONS =====
     
