@@ -257,6 +257,13 @@
                     {{ error }}
                 </div>
                 {% endif %}
+
+                {% if info %}
+                <div style="background:#efe;color:#2a7a3b;padding:12px;border-radius:5px;
+                            margin-bottom:20px;font-size:14px;border-left:4px solid #2a7a3b;">
+                    {{ info }}
+                </div>
+                {% endif %}
                 
                 <form method="POST">
                     <div class="form-group">
@@ -284,6 +291,12 @@
                     
                     <button type="submit" class="login-button">Login</button>
                 </form>
+
+                <div style="text-align:right;margin-top:10px;font-size:13px;">
+                    <a href="{{ url_for('forgot_password_page') }}" style="color:#667eea;text-decoration:none;">Forgot password?</a>
+                    &nbsp;·&nbsp;
+                    <a href="{{ url_for('forgot_username_page') }}" style="color:#667eea;text-decoration:none;">Forgot login ID?</a>
+                </div>
 
                 <div style="text-align: center; margin-top: 16px; font-size: 14px;">
                     New here? <a href="{{ url_for('register_page') }}" style="color: #667eea; font-weight: 600; text-decoration: none;">Create an account</a>

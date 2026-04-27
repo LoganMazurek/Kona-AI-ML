@@ -5,7 +5,7 @@ Handles password hashing, session token generation/validation, and login logic.
 
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -143,6 +143,51 @@ class AuthManager:
             Number of sessions deleted
         """
         return self.db.delete_expired_sessions()
+
+    # ===== PASSWORD RESET =====
+
+    def generate_password_reset_token(self, franchise_id: str) -> Optional[str]:
+        """
+        Generate a password-reset token valid for 1 hour, store it, and return it.
+
+        Returns:
+            The token string, or None if the franchise does not exist or storage fails.
+        """
+        franchise = self.db.get_franchise(franchise_id)
+        if not franchise:
+            return None
+
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        if not self.db.create_password_reset_token(token, franchise_id, expires_at):
+            return None
+        return token
+
+    def validate_and_consume_reset_token(self, token: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Validate a reset token and delete it (single-use).
+
+        Returns:
+            Tuple of (franchise_id, error_message).
+            On success: (franchise_id, None)
+            On failure: (None, error_message)
+        """
+        record = self.db.get_password_reset_token(token)
+        if not record:
+            return None, "Reset link is invalid or has expired"
+        franchise_id = record["franchise_id"]
+        self.db.delete_password_reset_token(token)
+        return franchise_id, None
+
+    def update_password(self, franchise_id: str, new_password: str) -> bool:
+        """
+        Hash and save a new password for the given franchise.
+
+        Returns:
+            True if successful.
+        """
+        new_hash = self.hash_password(new_password)
+        return self.db.update_franchise_password(franchise_id, new_hash)
 
 
 class SessionManager:
