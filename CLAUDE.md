@@ -11,7 +11,9 @@ Kona-AI-ML predicts event revenue for Kona Ice franchises and serves the predict
 There is no build step — it's a Python/Flask app. Install dependencies and run from the repo root so `source/` resolves on `sys.path` (handled by `conftest.py`, `wsgi.py`, and per-test `conftest.py`).
 
 ```bash
-pip install -r requirements.txt          # Python 3.11+ (Dockerfile uses 3.14-slim)
+pip install -r requirements.txt                          # runtime/inference deps (what the prod image installs)
+pip install -r requirements.txt -r requirements-dev.txt  # add training + test tooling (optuna, matplotlib, pytest)
+# Python 3.11+ (Dockerfile uses 3.14-slim)
 
 # Run the prediction web app locally (binds 127.0.0.1:5000, debug off by default)
 python source/web_app.py

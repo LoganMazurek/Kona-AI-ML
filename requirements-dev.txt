@@ -1,0 +1,8 @@
+# Development / training / test dependencies.
+# These are NOT installed in the production Docker image (see requirements.txt).
+# Install locally with:  pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+optuna>=3.0          # hyperparameter search, used only by source/Kona_AI_ML.py --train
+matplotlib>=3.7      # training/diagnostic plots, lazy-imported in Kona_AI_ML.py
+pytest>=7.0          # test suite (tests/)
