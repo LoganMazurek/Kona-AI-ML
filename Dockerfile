@@ -5,6 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # Cap glibc per-thread malloc arenas to curb RSS bloat/fragmentation in the
     # threaded gunicorn worker (default is 8*nproc arenas, which balloons idle RSS).
     MALLOC_ARENA_MAX=2 \
+    # Return freed heap memory to the OS sooner (default lets glibc retain large
+    # freed chunks). On a 1 GB droplet that swaps, trimming back the peaks from
+    # pandas/SHAP-heavy prediction requests keeps resident memory closer to the
+    # idle baseline instead of holding the high-water mark.
+    MALLOC_TRIM_THRESHOLD_=131072 \
     # Single-event inference needs no intra-op parallelism. Pinning the OpenMP /
     # BLAS thread pools to 1 stops each ML lib (xgboost/catboost/lightgbm) and
     # numpy from reserving per-core thread stacks/buffers, cutting idle memory and
