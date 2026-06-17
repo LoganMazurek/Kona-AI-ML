@@ -4,7 +4,7 @@
 pandas>=2.0
 numpy>=1.25
 scikit-learn>=1.2
-xgboost>=1.7
+xgboost>=3.2.0
 requests>=2.31.0
 uszipcode==1.0.1
 sqlalchemy-mate<2.0
