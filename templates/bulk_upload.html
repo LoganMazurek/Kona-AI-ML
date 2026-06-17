@@ -89,6 +89,35 @@
             color: #444;
         }
 
+        .training-banner {
+            display: flex;
+            gap: 18px;
+            align-items: flex-start;
+            border-left: 5px solid #2e7d32;
+            background: #f1f8f2;
+        }
+
+        .training-banner-icon {
+            font-size: 34px;
+            line-height: 1;
+        }
+
+        .training-banner-body h2 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+
+        .training-banner-body p {
+            font-size: 14px;
+            color: #455;
+            margin-bottom: 8px;
+        }
+
+        .training-banner-body a {
+            color: #2e7d32;
+            font-weight: 600;
+        }
+
         .card h3 {
             font-size: 17px;
             margin-bottom: 12px;
@@ -451,6 +480,25 @@
                 </ul>
             </div>
             {% endif %}
+        </div>
+        {% endif %}
+
+        {% if franchise_model_training %}
+        <!-- Franchise model training notification -->
+        <div class="card training-banner">
+            <div class="training-banner-icon">🤖</div>
+            <div class="training-banner-body">
+                <h2>Your franchise model is training</h2>
+                <p>
+                    This upload gave you enough completed events to build a dedicated
+                    model for your franchise. We've started training and deploying it in
+                    the background — you can keep working, no need to wait here.
+                </p>
+                <p>
+                    Check progress and results on your
+                    <a href="{{ url_for('dashboard') }}">dashboard</a> in a few minutes.
+                </p>
+            </div>
         </div>
         {% endif %}
 

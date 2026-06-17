@@ -14,6 +14,7 @@ import os
 import json
 import tempfile
 import requests
+import threading
 import uuid
 import hashlib
 import re
@@ -368,6 +369,76 @@ if PROD_MANAGER is not None:
         )
     except Exception as trainer_error:
         print(f"[WARN] Franchise model trainer unavailable: {trainer_error}")
+
+# ---------------------------------------------------------------------------
+# Background franchise-model training
+#
+# Training + deploying a franchise-specific model runs XGBoost cross-validation
+# and a full fit, which can take 30-120s. Running that inside a request thread
+# (previously on the /dashboard load that followed a bulk upload crossing the
+# threshold) blocks long enough to hit the nginx/gunicorn gateway timeout (504).
+# Instead we kick the work off on a daemon thread and return immediately; the
+# UI surfaces a "training in progress" notice and the result shows up on a later
+# dashboard visit. The in-process guard keeps a single run per franchise (the
+# app runs as one gunicorn worker, so an in-memory set is sufficient).
+# ---------------------------------------------------------------------------
+_FRANCHISE_TRAINING_LOCK = threading.Lock()
+_FRANCHISE_TRAINING_IN_PROGRESS = set()
+
+
+def is_franchise_training(franchise_id, progress=None):
+    """Return True if a franchise model train/deploy is currently running."""
+    with _FRANCHISE_TRAINING_LOCK:
+        if franchise_id in _FRANCHISE_TRAINING_IN_PROGRESS:
+            return True
+    if progress is not None and progress.get('last_training_status') == 'training':
+        return True
+    return False
+
+
+def start_franchise_training_async(franchise_id, force=False):
+    """Kick off a franchise model train+deploy on a background thread.
+
+    Returns True if a new run was started, False if one was already running or
+    the trainer is unavailable. The heavy work happens off the request thread so
+    the upload/dashboard response returns immediately instead of blocking long
+    enough to trigger a gateway timeout.
+    """
+    if FRANCHISE_MODEL_TRAINER is None:
+        return False
+
+    with _FRANCHISE_TRAINING_LOCK:
+        if franchise_id in _FRANCHISE_TRAINING_IN_PROGRESS:
+            return False
+        _FRANCHISE_TRAINING_IN_PROGRESS.add(franchise_id)
+
+    def _run():
+        try:
+            FRANCHISE_MODEL_TRAINER.ensure_model(franchise_id, force=force)
+        except Exception as training_error:
+            print(f"[ERROR] Franchise model training failed for {franchise_id}: {training_error}")
+            try:
+                franchise_db.update_franchise_model_status(
+                    franchise_id,
+                    last_training_attempt_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    last_training_status='error',
+                    last_training_message='Training did not complete. We will retry automatically.',
+                )
+            except Exception:
+                pass
+        finally:
+            with _FRANCHISE_TRAINING_LOCK:
+                _FRANCHISE_TRAINING_IN_PROGRESS.discard(franchise_id)
+
+    thread = threading.Thread(
+        target=_run,
+        name=f'franchise-train-{franchise_id}',
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
 if cv_mae is not None and cv_std is not None:
     try:
         print(f"CV MAE: {float(cv_mae):.2f} ± {float(cv_std):.2f}")
@@ -1996,18 +2067,17 @@ def dashboard():
     franchise = get_current_franchise()
     threshold = PROD_MANAGER.FRANCHISE_DATA_THRESHOLD if PROD_MANAGER else 100
     franchise_progress = franchise_db.get_franchise_model_progress(franchise['franchise_id'], threshold=threshold)
-    franchise_training_result = None
     should_train_initial = franchise_progress['ready_for_training'] and not franchise_progress['model_exists']
     should_retrain = franchise_progress.get('should_retrain_now', False)
-    if FRANCHISE_MODEL_TRAINER and (should_train_initial or should_retrain):
-        franchise_training_result = FRANCHISE_MODEL_TRAINER.ensure_model(
-            franchise['franchise_id'],
-            force=should_retrain,
-        )
-        franchise_progress = franchise_training_result.get('progress') or franchise_db.get_franchise_model_progress(
-            franchise['franchise_id'],
-            threshold=threshold,
-        )
+    if (should_train_initial or should_retrain) and not is_franchise_training(franchise['franchise_id'], franchise_progress):
+        # Train+deploy off the request thread so the dashboard returns promptly
+        # instead of blocking on the model fit (which used to cause a 504).
+        if start_franchise_training_async(franchise['franchise_id'], force=should_retrain):
+            franchise_progress = franchise_db.get_franchise_model_progress(
+                franchise['franchise_id'],
+                threshold=threshold,
+            )
+    training_in_progress = is_franchise_training(franchise['franchise_id'], franchise_progress)
 
     available_models = get_franchise_available_models(franchise['franchise_id'], franchise_progress)
 
@@ -2065,8 +2135,8 @@ def dashboard():
     franchise_model_popup = None
     popup_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     if franchise_progress['ready_for_training'] and not franchise_progress.get('threshold_popup_shown_at'):
-        if franchise_training_result and franchise_training_result.get('status') == 'awaiting_feature_snapshots':
-            popup_message = franchise_training_result['message']
+        if franchise_progress.get('last_training_status') == 'awaiting_feature_snapshots' and franchise_progress.get('last_training_message'):
+            popup_message = franchise_progress['last_training_message']
         else:
             popup_message = 'You hit the threshold for a dedicated franchise model. We have started preparing it, and it should be ready by your next dashboard visit.'
         franchise_model_popup = {
@@ -2097,7 +2167,11 @@ def dashboard():
             franchise['franchise_id'],
             model_ready_popup_shown_at=popup_timestamp,
         )
-    elif franchise_training_result and franchise_training_result.get('status') == 'retrained' and not franchise_progress.get('retrain_popup_shown_at'):
+    elif (franchise_progress['model_exists']
+          and franchise_progress.get('model_ready_popup_shown_at')
+          and franchise_progress.get('last_training_status') == 'trained'
+          and not franchise_progress.get('retrain_popup_shown_at')
+          and not training_in_progress):
         franchise_model_popup = {
             'kind': 'retrained',
             'title': 'Franchise Model Refreshed',
@@ -2117,6 +2191,7 @@ def dashboard():
                           default_model=default_model,
                           franchise_model_progress=franchise_progress,
                           franchise_model_popup=franchise_model_popup,
+                          training_in_progress=training_in_progress,
                           recent_predictions=recent_predictions,
                           realized_count=dashboard_stats['realized_count'],
                           realized_total=dashboard_stats['realized_total'],
@@ -3415,11 +3490,25 @@ def bulk_upload_page():
         result_csv_path='',
     )
 
+    # If this upload pushed the franchise across a training milestone, kick the
+    # train+deploy off in the background so the user gets their results page
+    # immediately (this used to run synchronously on the next dashboard load and
+    # time out with a 504). The dashboard shows the live training status.
+    franchise_model_training = False
+    if FRANCHISE_MODEL_TRAINER is not None:
+        threshold = getattr(PROD_MANAGER, 'FRANCHISE_DATA_THRESHOLD', 100)
+        training_progress = franchise_db.get_franchise_model_progress(franchise_id, threshold=threshold)
+        should_train_initial = training_progress['ready_for_training'] and not training_progress['model_exists']
+        should_retrain = training_progress.get('should_retrain_now', False)
+        if (should_train_initial or should_retrain) and not is_franchise_training(franchise_id, training_progress):
+            franchise_model_training = start_franchise_training_async(franchise_id, force=should_retrain)
+
     recent_uploads = franchise_db.get_recent_batch_uploads(franchise_id, limit=10)
     return render_template(
         'bulk_upload.html',
         recent_uploads=recent_uploads,
         results={'added': added, 'outcomes': outcomes, 'skipped': skipped, 'errors': errors},
+        franchise_model_training=franchise_model_training,
     )
 
 

@@ -25,7 +25,10 @@ class FranchiseDatabase:
     
     def get_connection(self):
         """Get database connection with row factory enabled."""
-        conn = sqlite3.connect(self.db_path)
+        # timeout lets a connection wait (rather than immediately raising
+        # "database is locked") when the background franchise-model trainer and
+        # a web request touch the DB at the same time.
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row  # Enable column access by name
         return conn
     
