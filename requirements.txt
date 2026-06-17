@@ -3,7 +3,7 @@
 # kept out of the production image to shrink it and reduce the resident footprint.
 pandas>=2.0
 numpy>=1.25
-scikit-learn>=1.2
+scikit-learn>=1.8.0
 xgboost>=1.7
 requests>=2.31.0
 uszipcode==1.0.1
