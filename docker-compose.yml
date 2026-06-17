@@ -1,14 +1,9 @@
+# The landing page for loganmazurek.com (formerly the `router` container) is now
+# served as static HTML directly by nginx — see deploy/nginx/router.conf. That
+# removes a ~57 MB gunicorn process from this 1 GB droplet. router_app.py /
+# wsgi_router.py are kept for local use (gunicorn wsgi_router:app) but are no
+# longer deployed.
 services:
-  router:
-    build: .
-    container_name: router
-    restart: unless-stopped
-    ports:
-      - "8002:8000"
-    environment:
-      FLASK_ENV: "production"
-    command: ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "2", "--timeout", "120", "--max-requests", "500", "--max-requests-jitter", "50", "wsgi_router:app"]
-
   kona-ml:
     build: .
     container_name: kona-ml

@@ -46,13 +46,13 @@ python scripts/bulk_upload_readiness_check.py
 
 ## Architecture
 
-### Two Flask apps, one Docker image
+### The prediction app (one Docker image) + a static landing page
 
-The single image (`Dockerfile`) is run as two containers via `docker-compose.yml`:
-- **`kona-ml`** (port 8001 → `wsgi:app`): the prediction app from `source/web_app.py`. This is the bulk of the system.
-- **`router`** (port 8002 → `wsgi_router:app`): a tiny landing page (`source/router_app.py`) serving `templates/router.html` for subdomain routing.
+`docker-compose.yml` runs a single container, **`kona-ml`** (port 8001 → `wsgi:app`), the prediction app from `source/web_app.py`. This is the bulk of the system. Gunicorn runs with `--workers 1 --threads 2` (the in-process model objects and SQLite connection assume a single worker).
 
-`nginx` config lives in `deploy/nginx/`. Gunicorn runs with `--workers 1 --threads 2` (the in-process model objects and SQLite connection assume a single worker).
+The landing page for `loganmazurek.com` is **static HTML** (`templates/router.html`, no server-side rendering) served **directly by nginx** (`deploy/nginx/router.conf`), not by an app container — this avoids a ~57 MB gunicorn process on the 1 GB droplet. `source/router_app.py` / `wsgi_router.py` remain for local use (`gunicorn wsgi_router:app`) but are no longer deployed.
+
+`nginx` config lives in `deploy/nginx/`.
 
 ### Prediction request flow
 
