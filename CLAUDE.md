@@ -118,4 +118,6 @@ Full runbook: `deploy/DB_BACKUP_ROLLBACK.md`. Reset a franchise's data with `scr
 
 ## CI
 
-The only GitHub Actions workflow is `.github/workflows/bulk-upload-readiness.yml` — it runs `scripts/bulk_upload_readiness_check.py` on PRs and pushes to `main` (Python 3.11). The pytest suite is **not** wired into CI; run it locally before pushing.
+Two GitHub Actions workflows run on PRs and pushes to `main` (Python 3.11):
+- `.github/workflows/bulk-upload-readiness.yml` — runs `scripts/bulk_upload_readiness_check.py`.
+- `.github/workflows/tests.yml` — runs the `pytest` suite (installs `requirements.txt` plus `pytest`).
