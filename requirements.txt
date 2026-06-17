@@ -1,7 +1,7 @@
 # Runtime (production) dependencies — what gunicorn needs to serve predictions.
 # Training/test-only tooling lives in requirements-dev.txt and is intentionally
 # kept out of the production image to shrink it and reduce the resident footprint.
-pandas>=2.0
+pandas>=3.0.2
 numpy>=1.25
 scikit-learn>=1.2
 xgboost>=1.7
