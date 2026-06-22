@@ -5,4 +5,4 @@
 
 optuna>=4.8.0          # hyperparameter search, used only by source/Kona_AI_ML.py --train
 matplotlib>=3.10.9      # training/diagnostic plots, lazy-imported in Kona_AI_ML.py
-pytest>=7.0          # test suite (tests/)
+pytest>=9.1.1          # test suite (tests/)
