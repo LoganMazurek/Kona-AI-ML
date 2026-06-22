@@ -9,7 +9,7 @@ requests>=2.31.0
 uszipcode==1.0.1
 sqlalchemy-mate<2.0
 SQLAlchemy<3.0
-census>=0.8.26
+census>=0.8.27
 catboost>=1.2.10
 lightgbm>=4.6.0
 flask>=2.0
