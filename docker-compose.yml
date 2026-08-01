@@ -12,7 +12,12 @@ services:
       - "8001:8000"
     environment:
       FLASK_ENV: "production"
-      SECRET_KEY: "FY8hyNv6wCxhboYdS6_Mqc7cj9XVduqYODey2JNorxDvj2ohWReFTTfnYCNauAAb"
+      # Read from the .env file next to this compose file -- never hardcode it
+      # here, since anyone who can read the key can forge a session for any
+      # franchise. The `:?` form aborts `docker compose up` when it is unset,
+      # so a missing key fails the deploy instead of starting an app whose
+      # sessions can be forged. See README "Rotating SECRET_KEY".
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY must be set in .env - see README}"
       SESSION_COOKIE_SECURE: "true"
     volumes:
       - ./source/franchise_data.db:/app/source/franchise_data.db

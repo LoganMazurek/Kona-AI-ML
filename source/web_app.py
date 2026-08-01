@@ -18,6 +18,7 @@ import threading
 import uuid
 import hashlib
 import re
+import secrets
 from catboost import Pool
 from weather_data import WeatherDataEnricher
 from joblib import load as joblib_load
@@ -249,8 +250,37 @@ def compact_currency(value):
         return f"{sign}${absolute / 1_000:.1f}K"
     return f"{sign}${absolute:,.2f}"
 
+def resolve_secret_key(env):
+    """
+    Resolve the Flask session-signing key from the environment.
+
+    Session cookies are signed with this key, so anyone who knows it can forge
+    a session for any franchise. It therefore must never fall back to a
+    hardcoded constant in production: refuse to boot instead, so a missing key
+    surfaces as a failed deploy rather than a silently forgeable app.
+
+    Outside production a random per-process key is generated, which keeps local
+    development working without a shared constant. The trade-off is that
+    sessions do not survive a restart in dev.
+    """
+    secret_key = env.get('SECRET_KEY')
+    if secret_key:
+        return secret_key
+
+    if env.get('FLASK_ENV', '').lower() == 'production':
+        raise RuntimeError(
+            "SECRET_KEY environment variable is required when FLASK_ENV=production. "
+            "Generate one with `python -c \"import secrets; print(secrets.token_urlsafe(48))\"` "
+            "and set it in the .env file next to docker-compose.yml."
+        )
+
+    print("WARNING: SECRET_KEY not set -- generating a random key for this process. "
+          "Sessions will not survive a restart. Set SECRET_KEY for production.")
+    return secrets.token_urlsafe(48)
+
+
 # Security configuration for sessions
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
+app.secret_key = resolve_secret_key(os.environ)
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -2326,6 +2356,45 @@ def update_target():
 
     franchise_db.update_franchise_target(franchise['franchise_id'], target_float)
     return redirect(url_for('dashboard', month=month_key))
+
+
+@app.route('/health')
+def health():
+    """
+    Health check endpoint for monitoring. Deliberately unauthenticated so an
+    external monitor can reach it, so the payload reports only booleans --
+    no franchise counts, paths, or exception details.
+
+    Returns 200 when every dependency is up, 503 when any is down, so a
+    monitor can alert on the status code alone.
+    """
+    import sys
+
+    # The model ensemble is loaded once at import time; PROD_MANAGER is left as
+    # None if that failed, which would make every /predict return an error.
+    models_loaded = PROD_MANAGER is not None
+
+    # Confirm the SQLite file is actually readable, not just that the path exists.
+    try:
+        conn = franchise_db.get_connection()
+        try:
+            conn.execute('SELECT 1 FROM franchises LIMIT 1').fetchone()
+        finally:
+            conn.close()
+        database_ok = True
+    except Exception as e:
+        print(f"[HEALTH] Database check failed: {e}")
+        database_ok = False
+
+    healthy = models_loaded and database_ok
+    health_status = {
+        "status": "healthy" if healthy else "degraded",
+        "python_version": sys.version,
+        "flask_running": True,
+        "models_loaded": models_loaded,
+        "database_ok": database_ok,
+    }
+    return jsonify(health_status), 200 if healthy else 503
 
 
 @app.route('/')

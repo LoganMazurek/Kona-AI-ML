@@ -95,7 +95,12 @@ Modules across `source/` use a try/except import pattern: package-style (`from K
 
 ## Configuration (environment variables)
 
-- `SECRET_KEY` — Flask session signing (defaults to a dev key; must be set in prod).
+- `SECRET_KEY` — Flask session signing. Read from `.env` next to `docker-compose.yml`
+  (see `.env.example`). **Required in production**: `docker compose up` aborts when it
+  is unset, and `resolve_secret_key()` in `source/web_app.py` raises at import when
+  `FLASK_ENV=production` without it. Outside production a random per-process key is
+  generated, so dev sessions do not survive a restart. Never hardcode it in
+  `docker-compose.yml`. Rotation runbook: README "Rotating SECRET_KEY".
 - `SESSION_COOKIE_SECURE` — `"true"` in production.
 - `FLASK_DEBUG` — `"1"` enables debug/reload (local only).
 - `ENABLE_USZIPCODE`, `ENABLE_PREDICTION_EXPLAINER` — feature toggles (default on).
@@ -120,6 +125,8 @@ Full runbook: `deploy/DB_BACKUP_ROLLBACK.md`. Reset a franchise's data with `scr
 
 ## CI
 
-Two GitHub Actions workflows run on PRs and pushes to `main` (Python 3.11):
+Two GitHub Actions workflows run on PRs and pushes to `main` (Python 3.14, kept in
+sync with the Dockerfile — CI must not lag production, or dependency upgrades that
+require a newer Python fail in CI as spurious install errors):
 - `.github/workflows/bulk-upload-readiness.yml` — runs `scripts/bulk_upload_readiness_check.py`.
 - `.github/workflows/tests.yml` — runs the `pytest` suite (installs `requirements.txt` plus `pytest`).
