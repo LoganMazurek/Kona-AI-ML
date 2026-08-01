@@ -85,7 +85,14 @@ Training depends on a legacy `feature_engineering.py` module that is **not prese
 
 ### Database
 
-`source/franchise_db.py` (`FranchiseDatabase`) is a hand-rolled SQLite layer (no ORM). The DB file is `source/franchise_data.db`, created/migrated on startup via `init_schema()`. Core tables: `franchises`, `models`, `sessions`, `predictions`, plus password-reset tokens. Auth (`source/auth.py`) uses `werkzeug` pbkdf2:sha256 hashing and hex session tokens; sessions are cookie-based (`franchise_session`, 24h).
+`source/franchise_db.py` (`FranchiseDatabase`) is a hand-rolled SQLite layer (no ORM). The DB file is `source/franchise_data.db`, created/migrated on startup via `init_schema()`. Core tables: `franchises`, `models`, `sessions`, `predictions`, `login_events`, plus password-reset tokens.
+
+`login_events` is append-only usage history, written by `record_login_event()` from
+inside `create_session()` so every successful login is captured at one choke point.
+It exists because `sessions` rows are deleted on logout and on expiry, so that table
+can only show who is signed in *now*, never how often someone logs in. Writes there
+are best-effort — a failure is logged and swallowed rather than costing a user their
+login. It intentionally stores no IP or user agent. Auth (`source/auth.py`) uses `werkzeug` pbkdf2:sha256 hashing and hex session tokens; sessions are cookie-based (`franchise_session`, 24h).
 
 The DB is **not** in version control (`*.db` is gitignored) and is the production state of record. Before any production deploy, snapshot it (see below).
 
@@ -122,6 +129,14 @@ docker compose down && docker compose up -d --build
 ```
 
 Full runbook: `deploy/DB_BACKUP_ROLLBACK.md`. Reset a franchise's data with `scripts/reset_franchise_data.py` (makes a backup first).
+
+## Usage reporting
+
+`scripts/usage_report.py` (CLI) renders a per-franchise usage report over a trailing
+window, combining SQL aggregates from `source/usage_analytics.py` with optional nginx
+access-log parsing (`--logs`). Read-only throughout: the DB is opened with
+`mode=ro`, so it is safe against production. See README "Usage reporting" for the
+cron recipe and the logrotate caveat.
 
 ## CI
 

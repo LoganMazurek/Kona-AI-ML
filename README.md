@@ -29,6 +29,47 @@ docker compose down && docker compose up -d --build
 
 > Note: uses `docker compose` (plugin, not the legacy `docker-compose` standalone command).
 
+## Usage reporting
+
+`scripts/usage_report.py` summarises how much the app is actually being used —
+per franchise, over a trailing window. It is read-only (the database is opened in
+SQLite read-only mode), so it is safe to run against production while the app is
+serving.
+
+```bash
+python scripts/usage_report.py --days 7                            # database only
+python scripts/usage_report.py --days 30 \
+    --logs '/var/log/nginx/access.log*'                            # + web traffic
+python scripts/usage_report.py --days 7 --json > reports/week.json # machine-readable
+```
+
+It reads two independent sources, because neither is sufficient alone:
+
+- **The database** — signups, logins, predictions (real vs. test), bulk uploads,
+  and recorded actuals, broken down per franchise, plus which accounts have gone
+  dormant. This only sees authenticated, successful actions.
+- **The nginx access log** (`--logs`, optional) — total traffic, unique visitors,
+  status-code mix, and top paths, with crawler hits reported separately so they
+  don't inflate the numbers. Pass a glob to include rotated archives; `.gz` files
+  are read directly.
+
+Login history comes from the `login_events` table, which records one row per
+successful login. The `sessions` table cannot answer this — rows there are
+deleted on logout and again when expired sessions are cleaned up, so it only ever
+shows who is signed in right now. **`login_events` starts collecting from the
+deploy that introduced it**; earlier logins are not recoverable.
+
+Weekly cron example:
+
+```cron
+0 8 * * 1 cd /root/Kona-AI-ML && python3 scripts/usage_report.py --days 7 \
+    --logs '/var/log/nginx/access.log*' | mail -s 'Kona weekly usage' you@example.com
+```
+
+Note that nginx's default logrotate keeps ~14 days, so a `--days 30` report will
+silently under-count web traffic unless retention is extended. The database
+figures are unaffected.
+
 ## Configuration
 
 `SECRET_KEY` is read from a `.env` file next to `docker-compose.yml` (gitignored;
