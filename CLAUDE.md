@@ -13,7 +13,7 @@ There is no build step — it's a Python/Flask app. Install dependencies and run
 ```bash
 pip install -r requirements.txt                          # runtime/inference deps (what the prod image installs)
 pip install -r requirements.txt -r requirements-dev.txt  # add training + test tooling (optuna, matplotlib, pytest)
-# Python 3.11+ (Dockerfile uses 3.14-slim)
+# Python 3.12+ required (numpy/xgboost/shap floors); Dockerfile and CI use 3.14
 
 # Run the prediction web app locally (binds 127.0.0.1:5000, debug off by default)
 python source/web_app.py

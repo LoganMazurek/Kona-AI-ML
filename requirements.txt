@@ -1,18 +1,22 @@
 # Runtime (production) dependencies — what gunicorn needs to serve predictions.
 # Training/test-only tooling lives in requirements-dev.txt and is intentionally
 # kept out of the production image to shrink it and reduce the resident footprint.
-pandas>=3.0.2
-numpy>=1.25
-scikit-learn>=1.8.0
-xgboost>=3.2.0
-requests>=2.31.0
+pandas>=3.0.3
+# Capped below 2.5: shap pulls in numba, and numba (0.66.0, the only release with
+# cp314 wheels) requires numpy<2.5. Lifting this cap makes pip backtrack to older
+# numba versions that have no 3.14 wheel and refuse to build from source on 3.14.
+# Dependabot's numpy>=2.5.0 bump is unmergeable until numba supports numpy 2.5.
+numpy>=1.25,<2.5
+scikit-learn>=1.9.0
+xgboost>=3.3.0
+requests>=2.34.2
 uszipcode==1.0.1
 sqlalchemy-mate<2.0
 SQLAlchemy<3.0
-census>=0.8.26
+census>=0.8.27
 catboost>=1.2.10
 lightgbm>=4.6.0
-flask>=2.0
-shap>=0.41
+flask>=3.1.3
+shap>=0.52.0
 gunicorn>=25.3.0
 openpyxl>=3.1.5
