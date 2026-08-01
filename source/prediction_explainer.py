@@ -206,7 +206,7 @@ class PredictionExplainer:
             
         except Exception as e:
             print(f"[WARN] SHAP explanation failed: {e}")
-            return {'available': False, 'error': str(e)}
+            return {'available': False}
     
     def _get_model_contributions(self, X: pd.DataFrame, top_k: int) -> Dict[str, Any]:
         """Get per-model contributions and check for agreement."""
@@ -403,7 +403,7 @@ class PredictionExplainer:
                     explanations.append(exp)
                 except Exception as e:
                     print(f"[WARN] Explanation failed for sample {j}: {e}")
-                    explanations.append({'error': str(e)})
+                    explanations.append({'error': 'An internal error occurred while generating this explanation'})
         
         return explanations
 
