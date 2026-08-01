@@ -17,14 +17,28 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
+def _env(name: str, default: str) -> str:
+    """
+    Read an environment variable, treating an empty value as unset.
+
+    docker compose passes these through as "${SMTP_HOST:-}", which sets the
+    variable to an empty string when it is absent from .env. A plain
+    os.environ.get() would then return "" instead of the default, so an
+    unconfigured deployment would try to reach host "" on port int("") rather
+    than falling back to sensible values.
+    """
+    value = os.environ.get(name)
+    return value if value not in (None, "") else default
+
+
 def _get_smtp_config() -> dict:
     return {
-        "host": os.environ.get("SMTP_HOST", "localhost"),
-        "port": int(os.environ.get("SMTP_PORT", "587")),
-        "user": os.environ.get("SMTP_USER", ""),
-        "password": os.environ.get("SMTP_PASSWORD", ""),
-        "from_addr": os.environ.get("SMTP_FROM", "noreply@kona-ml.app"),
-        "use_tls": os.environ.get("SMTP_USE_TLS", "true").lower() == "true",
+        "host": _env("SMTP_HOST", "localhost"),
+        "port": int(_env("SMTP_PORT", "587")),
+        "user": _env("SMTP_USER", ""),
+        "password": _env("SMTP_PASSWORD", ""),
+        "from_addr": _env("SMTP_FROM", "noreply@kona-ml.app"),
+        "use_tls": _env("SMTP_USE_TLS", "true").lower() == "true",
     }
 
 
@@ -171,3 +185,59 @@ If you did not make this request you can safely ignore this email.
 </html>"""
 
     _send_email(to_email, subject, body_html, body_text)
+
+
+def send_usage_report_email(to_addrs, subject: str, report_text: str) -> None:
+    """
+    Send a plain-text usage report to one or more recipients.
+
+    Used by scripts/usage_report.py so scheduled reports go out over the same
+    authenticated SMTP relay as the transactional mail, rather than through a
+    local MTA. Mail sent directly from the droplet is routinely spam-filtered or
+    rejected outright by large providers, since the droplet IP has no matching
+    SPF/DKIM/rDNS for the sending domain.
+
+    Args:
+        to_addrs:    Recipient address, or a list of addresses.
+        subject:     Subject line.
+        report_text: The report body, as pre-formatted plain text.
+
+    Raises:
+        Exception on SMTP failure, so a scheduled run fails loudly rather than
+        silently producing no report.
+    """
+    if isinstance(to_addrs, str):
+        to_addrs = [to_addrs]
+    recipients = [a.strip() for a in to_addrs if a and a.strip()]
+    if not recipients:
+        raise ValueError("send_usage_report_email requires at least one recipient")
+
+    cfg = _get_smtp_config()
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = cfg["from_addr"]
+    msg["To"] = ", ".join(recipients)
+
+    # The report is column-aligned, so the HTML part has to preserve whitespace
+    # in a monospaced font or it turns into unreadable reflowed prose.
+    escaped = (report_text.replace("&", "&amp;")
+                          .replace("<", "&lt;")
+                          .replace(">", "&gt;"))
+    body_html = (
+        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"></head><body>'
+        '<pre style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;'
+        'font-size:13px;line-height:1.45;color:#222;">'
+        f'{escaped}'
+        '</pre></body></html>'
+    )
+
+    msg.attach(MIMEText(report_text, "plain"))
+    msg.attach(MIMEText(body_html, "html"))
+
+    with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as server:
+        if cfg["use_tls"]:
+            server.starttls()
+        if cfg["user"] and cfg["password"]:
+            server.login(cfg["user"], cfg["password"])
+        server.sendmail(cfg["from_addr"], recipients, msg.as_string())

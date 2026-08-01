@@ -19,5 +19,14 @@ services:
       # sessions can be forged. See README "Rotating SECRET_KEY".
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY must be set in .env - see README}"
       SESSION_COOKIE_SECURE: "true"
+      # Password-reset and username-reminder mail. Without these the app falls
+      # back to localhost:587, where nothing is listening, so those emails fail
+      # silently. Left empty when unset so the container still starts.
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_USE_TLS: "${SMTP_USE_TLS:-true}"
     volumes:
       - ./source/franchise_data.db:/app/source/franchise_data.db
