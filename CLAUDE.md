@@ -95,7 +95,12 @@ Modules across `source/` use a try/except import pattern: package-style (`from K
 
 ## Configuration (environment variables)
 
-- `SECRET_KEY` — Flask session signing (defaults to a dev key; must be set in prod).
+- `SECRET_KEY` — Flask session signing. Read from `.env` next to `docker-compose.yml`
+  (see `.env.example`). **Required in production**: `docker compose up` aborts when it
+  is unset, and `resolve_secret_key()` in `source/web_app.py` raises at import when
+  `FLASK_ENV=production` without it. Outside production a random per-process key is
+  generated, so dev sessions do not survive a restart. Never hardcode it in
+  `docker-compose.yml`. Rotation runbook: README "Rotating SECRET_KEY".
 - `SESSION_COOKIE_SECURE` — `"true"` in production.
 - `FLASK_DEBUG` — `"1"` enables debug/reload (local only).
 - `ENABLE_USZIPCODE`, `ENABLE_PREDICTION_EXPLAINER` — feature toggles (default on).

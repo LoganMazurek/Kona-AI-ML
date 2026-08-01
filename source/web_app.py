@@ -18,6 +18,7 @@ import threading
 import uuid
 import hashlib
 import re
+import secrets
 from catboost import Pool
 from weather_data import WeatherDataEnricher
 from joblib import load as joblib_load
@@ -249,8 +250,37 @@ def compact_currency(value):
         return f"{sign}${absolute / 1_000:.1f}K"
     return f"{sign}${absolute:,.2f}"
 
+def resolve_secret_key(env):
+    """
+    Resolve the Flask session-signing key from the environment.
+
+    Session cookies are signed with this key, so anyone who knows it can forge
+    a session for any franchise. It therefore must never fall back to a
+    hardcoded constant in production: refuse to boot instead, so a missing key
+    surfaces as a failed deploy rather than a silently forgeable app.
+
+    Outside production a random per-process key is generated, which keeps local
+    development working without a shared constant. The trade-off is that
+    sessions do not survive a restart in dev.
+    """
+    secret_key = env.get('SECRET_KEY')
+    if secret_key:
+        return secret_key
+
+    if env.get('FLASK_ENV', '').lower() == 'production':
+        raise RuntimeError(
+            "SECRET_KEY environment variable is required when FLASK_ENV=production. "
+            "Generate one with `python -c \"import secrets; print(secrets.token_urlsafe(48))\"` "
+            "and set it in the .env file next to docker-compose.yml."
+        )
+
+    print("WARNING: SECRET_KEY not set -- generating a random key for this process. "
+          "Sessions will not survive a restart. Set SECRET_KEY for production.")
+    return secrets.token_urlsafe(48)
+
+
 # Security configuration for sessions
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
+app.secret_key = resolve_secret_key(os.environ)
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
