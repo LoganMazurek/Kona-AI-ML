@@ -186,7 +186,31 @@ class FranchiseDatabase:
                 FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id)
             )
         ''')
-        
+
+        # Login events table -- append-only usage history.
+        #
+        # `sessions` cannot answer "how often does each franchise log in": rows are
+        # deleted on logout and again when cleanup_expired_sessions() runs, so it
+        # only ever shows who is currently signed in. This table keeps one durable
+        # row per successful login instead.
+        #
+        # Deliberately holds no IP address or user agent -- franchise_id and a
+        # timestamp answer the usage questions without storing anything that
+        # identifies an individual person.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS login_events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                franchise_id TEXT NOT NULL,
+                login_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(franchise_id) REFERENCES franchises(franchise_id)
+            )
+        ''')
+        # Reporting scans by time window, then groups by franchise.
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_login_events_timestamp
+            ON login_events(login_timestamp)
+        ''')
+
         conn.commit()
         conn.close()
     
@@ -625,8 +649,34 @@ class FranchiseDatabase:
             ''', (session_token, franchise_id, expires_at_str))
             conn.commit()
             conn.close()
+            self.record_login_event(franchise_id)
             return True
         except sqlite3.IntegrityError:
+            return False
+
+    def record_login_event(self, franchise_id: str) -> bool:
+        """
+        Append a login to the durable usage history.
+
+        Called from create_session so every successful login is captured
+        regardless of which entry point produced it.
+
+        Analytics must never cost a franchise their login, so a failure here is
+        swallowed rather than raised -- the caller has already committed the
+        session by this point.
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT INTO login_events (franchise_id) VALUES (?)',
+                (franchise_id,)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"[ANALYTICS] Failed to record login event for {franchise_id}: {e}")
             return False
     
     def get_session(self, session_token: str) -> Optional[Dict]:
