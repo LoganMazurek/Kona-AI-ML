@@ -120,6 +120,8 @@ Full runbook: `deploy/DB_BACKUP_ROLLBACK.md`. Reset a franchise's data with `scr
 
 ## CI
 
-Two GitHub Actions workflows run on PRs and pushes to `main` (Python 3.11):
+Two GitHub Actions workflows run on PRs and pushes to `main` (Python 3.14, kept in
+sync with the Dockerfile — CI must not lag production, or dependency upgrades that
+require a newer Python fail in CI as spurious install errors):
 - `.github/workflows/bulk-upload-readiness.yml` — runs `scripts/bulk_upload_readiness_check.py`.
 - `.github/workflows/tests.yml` — runs the `pytest` suite (installs `requirements.txt` plus `pytest`).

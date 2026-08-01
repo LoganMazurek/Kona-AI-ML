@@ -22,7 +22,12 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          # Must track the Dockerfile (python:3.14-slim) -- production runs 3.14,
+          # so testing on an older Python tests a stack that is never deployed.
+          # It also silently blocks dependency upgrades: releases that declare
+          # Requires-Python >=3.12 are uninstallable here and fail as a bogus
+          # "No matching distribution found" rather than a real test failure.
+          python-version: '3.14'
           cache: 'pip'
           cache-dependency-path: requirements.txt
 
