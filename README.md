@@ -59,12 +59,40 @@ deleted on logout and again when expired sessions are cleaned up, so it only eve
 shows who is signed in right now. **`login_events` starts collecting from the
 deploy that introduced it**; earlier logins are not recoverable.
 
-Weekly cron example:
+### Emailing the report
+
+`--email` sends the report over the same authenticated SMTP relay the app uses
+for password resets, rather than through a local MTA. Mail sent directly from the
+droplet is routinely spam-filtered or rejected by large providers, because the
+droplet IP has no matching SPF/DKIM/rDNS — so this is the reliable path, and it
+means no `postfix`/`mailutils` install at all.
+
+It requires the `SMTP_*` settings in `.env` (see `.env.example`). The script reads
+that file itself, because cron starts with an empty environment; point it
+elsewhere with `--env-file`.
+
+```bash
+python scripts/usage_report.py --days 7 --email you@example.com
+python scripts/usage_report.py --days 7 --email 'a@example.com,b@example.com'
+python scripts/usage_report.py --days 7 --email you@example.com --subject 'Weekly numbers'
+```
+
+On success it prints nothing, so a cron run stays quiet. If the send fails it
+exits non-zero and writes the report to stderr, so the numbers reach you through
+cron's own mail rather than being lost.
+
+Weekly cron (run as root — the nginx logs are root-only):
 
 ```cron
-0 8 * * 1 cd /root/Kona-AI-ML && python3 scripts/usage_report.py --days 7 \
-    --logs '/var/log/nginx/access.log*' | mail -s 'Kona weekly usage' you@example.com
+0 8 * * 1 cd /root/Kona-AI-ML && /usr/bin/python3 scripts/usage_report.py --days 7 --logs '/var/log/nginx/access.log*' --email you@example.com
 ```
+
+Use absolute paths (cron's `PATH` is minimal), keep the log glob quoted (unquoted,
+the shell expands it and only the first file is passed), and escape any literal
+`%` as `\%` — in crontab `%` means newline and truncates the command.
+
+The report script imports only the standard library, so it needs no virtualenv and
+does not run inside the container.
 
 Note that nginx's default logrotate keeps ~14 days, so a `--days 30` report will
 silently under-count web traffic unless retention is extended. The database

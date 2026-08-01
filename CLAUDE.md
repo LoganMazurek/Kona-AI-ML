@@ -135,8 +135,17 @@ Full runbook: `deploy/DB_BACKUP_ROLLBACK.md`. Reset a franchise's data with `scr
 `scripts/usage_report.py` (CLI) renders a per-franchise usage report over a trailing
 window, combining SQL aggregates from `source/usage_analytics.py` with optional nginx
 access-log parsing (`--logs`). Read-only throughout: the DB is opened with
-`mode=ro`, so it is safe against production. See README "Usage reporting" for the
-cron recipe and the logrotate caveat.
+`mode=ro`, so it is safe against production. `--email` sends it via
+`send_usage_report_email()` in `source/email_utils.py`, reusing the `SMTP_*` config;
+the script loads `.env` itself since cron has no environment. It imports only the
+standard library, so it runs on the host's bare `python3` — no virtualenv, not in the
+container. See README "Usage reporting" for the cron recipe and the logrotate caveat.
+
+Note `docker-compose.yml` must pass the `SMTP_*` variables through to the container
+or the app's password-reset mail silently falls back to `localhost:587`. Those are
+forwarded as `"${SMTP_HOST:-}"` style defaults, which set the variable to an empty
+string when unset — hence `_env()` in `email_utils.py`, which treats empty as unset
+so the documented defaults still apply.
 
 ## CI
 
