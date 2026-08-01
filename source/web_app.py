@@ -2328,6 +2328,45 @@ def update_target():
     return redirect(url_for('dashboard', month=month_key))
 
 
+@app.route('/health')
+def health():
+    """
+    Health check endpoint for monitoring. Deliberately unauthenticated so an
+    external monitor can reach it, so the payload reports only booleans --
+    no franchise counts, paths, or exception details.
+
+    Returns 200 when every dependency is up, 503 when any is down, so a
+    monitor can alert on the status code alone.
+    """
+    import sys
+
+    # The model ensemble is loaded once at import time; PROD_MANAGER is left as
+    # None if that failed, which would make every /predict return an error.
+    models_loaded = PROD_MANAGER is not None
+
+    # Confirm the SQLite file is actually readable, not just that the path exists.
+    try:
+        conn = franchise_db.get_connection()
+        try:
+            conn.execute('SELECT 1 FROM franchises LIMIT 1').fetchone()
+        finally:
+            conn.close()
+        database_ok = True
+    except Exception as e:
+        print(f"[HEALTH] Database check failed: {e}")
+        database_ok = False
+
+    healthy = models_loaded and database_ok
+    health_status = {
+        "status": "healthy" if healthy else "degraded",
+        "python_version": sys.version,
+        "flask_running": True,
+        "models_loaded": models_loaded,
+        "database_ok": database_ok,
+    }
+    return jsonify(health_status), 200 if healthy else 503
+
+
 @app.route('/')
 def home():
     """Redirect to login if not authenticated, otherwise show prediction form."""
