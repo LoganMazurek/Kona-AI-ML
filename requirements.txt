@@ -1,7 +1,7 @@
 # Runtime (production) dependencies — what gunicorn needs to serve predictions.
 # Training/test-only tooling lives in requirements-dev.txt and is intentionally
 # kept out of the production image to shrink it and reduce the resident footprint.
-pandas>=3.0.3
+pandas>=3.0.5
 # Capped below 2.5: shap pulls in numba, and numba (0.66.0, the only release with
 # cp314 wheels) requires numpy<2.5. Lifting this cap makes pip backtrack to older
 # numba versions that have no 3.14 wheel and refuse to build from source on 3.14.
