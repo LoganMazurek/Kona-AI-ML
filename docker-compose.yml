@@ -30,3 +30,5 @@ services:
       SMTP_USE_TLS: "${SMTP_USE_TLS:-true}"
     volumes:
       - ./source/franchise_data.db:/app/source/franchise_data.db
+      # Franchise models are trained in-app; without this they vanish on every rebuild.
+      - ./production/models:/app/production/models
