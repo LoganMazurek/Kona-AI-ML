@@ -68,16 +68,17 @@ class ProductionModelManager:
         return None
     
     def load_franchise_model(self, franchise_id):
-        """Load franchise-specific model if available."""
-        if franchise_id in self.franchise_models:
-            return self.franchise_models[franchise_id]
-        
+        """Load franchise-specific model if available (reloaded when the file is retrained)."""
         path = os.path.join(self.models_dir, f'franchise_{franchise_id}_model.joblib')
-        if os.path.exists(path):
-            self.franchise_models[franchise_id] = joblib.load(path)
-            return self.franchise_models[franchise_id]
-        
-        return None
+        if not os.path.exists(path):
+            return None
+
+        mtime = os.path.getmtime(path)
+        cached = self.franchise_models.get(franchise_id)
+        if cached is None or cached[0] != mtime:
+            cached = (mtime, joblib.load(path))
+            self.franchise_models[franchise_id] = cached
+        return cached[1]
     
     def should_use_franchise_model(self, franchise_id, master_data):
         """Check if franchise has enough data to use franchise-specific model."""

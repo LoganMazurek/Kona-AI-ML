@@ -10,6 +10,49 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_predict
 from xgboost import XGBRegressor
 
+# Completed events below this net sales/hour are excluded from franchise training.
+MIN_TRAINING_REVENUE_PER_HOUR = 50.0
+
+
+def normalize_event_name(name: Optional[str]) -> str:
+    """Key for matching repeat occurrences of the same event."""
+    return ' '.join(str(name or '').lower().split())
+
+
+def training_revenue_per_hour(example: Dict[str, Any]) -> Optional[float]:
+    """Net sales/hour for a completed event, or None if it is excluded from training.
+
+    Near-zero sales are almost always cancellations, washouts or bad duration
+    entries, not demand signal; they dominate MAE if kept.
+    """
+    duration = float(example.get('duration_hours') or 0.0)
+    if duration <= 0 or example.get('actual_total_net_sales') is None:
+        return None
+    per_hour = float(example['actual_total_net_sales']) / duration
+    return per_hour if per_hour >= MIN_TRAINING_REVENUE_PER_HOUR else None
+
+
+def prior_event_features(examples: List[Dict[str, Any]], event_name: Optional[str], event_date: Optional[str]) -> Dict[str, float]:
+    """History of earlier occurrences of the same event, from completed training examples.
+
+    Only strictly earlier dates count, so an event never sees its own (or a
+    same-day sibling's) outcome. Used identically at training and prediction time.
+    """
+    key = normalize_event_name(event_name)
+    event_date = str(event_date or '')
+    prior = []
+    if key:
+        for example in examples:
+            if (normalize_event_name(example.get('event_name')) == key
+                    and str(example.get('scheduled_event_date') or '') < event_date):
+                per_hour = training_revenue_per_hour(example)
+                if per_hour is not None:
+                    prior.append(per_hour)
+    return {
+        'Prior_Event_Count': float(len(prior)),
+        'Prior_Event_Revenue_Per_Hour': float(np.mean(prior)) if prior else 0.0,
+    }
+
 
 class FranchiseModelTrainer:
     """Train and publish franchise-specific models from stored feature snapshots."""
@@ -207,6 +250,7 @@ class FranchiseModelTrainer:
         }
 
     def _build_training_frame(self, examples: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Build the training frame from completed examples (DB returns them in event-date order)."""
         rows: List[Dict[str, Any]] = []
         for example in examples:
             raw_snapshot = example.get('event_features_json')
@@ -218,9 +262,14 @@ class FranchiseModelTrainer:
                 continue
             if not isinstance(feature_snapshot, dict):
                 continue
+            if training_revenue_per_hour(example) is None:
+                continue
             row = dict(feature_snapshot)
+            # ponytail: O(n^2) history scan, fine for hundreds of events per franchise
+            row.update(prior_event_features(
+                examples, example.get('event_name'), example.get('scheduled_event_date')))
             row['target_total_net_sales'] = float(example['actual_total_net_sales'])
-            row['duration_hours'] = float(example['duration_hours'] or 0.0)
+            row['duration_hours'] = float(example['duration_hours'])
             rows.append(row)
         return pd.DataFrame(rows)
 
