@@ -44,6 +44,11 @@ import clean_layers_feature_preparation as clfp  # noqa: E402
 class FakeProductionManager:
     """Deterministic predictor used by readiness tests."""
 
+    FRANCHISE_DATA_THRESHOLD = 100
+
+    def load_franchise_model(self, franchise_id):  # pylint: disable=unused-argument
+        return None
+
     def predict(self, feature_df, franchise_id=None):  # pylint: disable=unused-argument
         # Return a stable, non-zero total net sales prediction.
         return [1200.0], "clean_layers_ensemble"

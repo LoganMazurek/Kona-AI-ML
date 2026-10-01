@@ -42,12 +42,12 @@ except ImportError:
 try:
     from Kona_AI_ML.franchise_db import FranchiseDatabase
     from Kona_AI_ML.auth import AuthManager, SessionManager
-    from Kona_AI_ML.franchise_model_training import FranchiseModelTrainer
+    from Kona_AI_ML.franchise_model_training import FranchiseModelTrainer, prior_event_features
     from Kona_AI_ML.email_utils import send_password_reset_email, send_username_reminder_email
 except ImportError:
     from franchise_db import FranchiseDatabase
     from auth import AuthManager, SessionManager
-    from franchise_model_training import FranchiseModelTrainer
+    from franchise_model_training import FranchiseModelTrainer, prior_event_features
     from email_utils import send_password_reset_email, send_username_reminder_email
 
 # Use a single source of truth for ZIP cluster prediction (DRY)
@@ -825,6 +825,53 @@ def get_franchise_available_models(franchise_id, franchise_progress=None):
     available_models = selectable + non_selectable
 
     return available_models
+
+
+def pick_default_model(default_model_id, available_models):
+    """The model the franchise has selected, else the top-ranked selectable one."""
+    default_model = None
+    if default_model_id:
+        default_model = next((m for m in available_models if m['model_id'] == default_model_id), None)
+    if not default_model and available_models:
+        default_model = next((model for model in available_models if model.get('selectable', True)), available_models[0])
+    return default_model
+
+
+def get_franchise_serving_model(franchise_id):
+    """Return (model, history) when the franchise's default is its own trained model, else (None, None).
+
+    Mirrors what the dashboard shows as the active model.
+    """
+    if PROD_MANAGER is None:
+        return None, None
+    try:
+        franchise = franchise_db.get_franchise(franchise_id) or {}
+        chosen = pick_default_model(franchise.get('default_model_id'), get_franchise_available_models(franchise_id))
+        if not chosen or chosen.get('model_type') != 'franchise_specific' or not chosen.get('selectable', True):
+            return None, None
+        model = PROD_MANAGER.load_franchise_model(franchise_id)
+        if model is None:
+            return None, None
+        return model, franchise_db.get_franchise_training_examples(franchise_id)
+    except Exception as lookup_error:
+        # Never let franchise-model selection break a prediction; the merged ensemble still works.
+        print(f"[WARN] Franchise model lookup failed for {franchise_id}, using merged ensemble: {lookup_error}")
+        return None, None
+
+
+def predict_event_revenue(feature_df, franchise_id, franchise_model, history, event_name, event_date_str):
+    """Predict total net sales with the franchise model when given, else the global ensemble."""
+    if franchise_model is not None:
+        try:
+            X = feature_df.copy()
+            for name, value in prior_event_features(history, event_name, event_date_str).items():
+                X[name] = value
+            # Align to the columns/order the model was trained on (older models lack the history features).
+            X = X.reindex(columns=franchise_model.feature_names_in_, fill_value=0.0).fillna(0.0).astype(float)
+            return franchise_model.predict(X), 'franchise_specific'
+        except Exception as franchise_error:
+            print(f"[WARN] Franchise model prediction failed for {franchise_id}, using merged ensemble: {franchise_error}")
+    return PROD_MANAGER.predict(feature_df, franchise_id=franchise_id)
 
 
 def get_demographics_from_zip(zip_code):
@@ -2153,14 +2200,7 @@ def dashboard():
             pred['predicted_vs_actual_diff'] = float(predicted_total) - float(actual_value)
     
     # Try to get default model from database, fallback to first available
-    default_model_id = franchise.get('default_model_id')
-    default_model = None
-    
-    if default_model_id:
-        default_model = next((m for m in available_models if m['model_id'] == default_model_id), None)
-    
-    if not default_model and available_models:
-        default_model = next((model for model in available_models if model.get('selectable', True)), available_models[0])
+    default_model = pick_default_model(franchise.get('default_model_id'), available_models)
 
     franchise_model_popup = None
     popup_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2475,9 +2515,13 @@ def predict():
         if PROD_MANAGER is None:
             return jsonify({'error': 'Model not loaded. Please try again.'}), 500
         
-        predictions, model_type = PROD_MANAGER.predict(feature_df, franchise_id=franchise_id)
+        franchise_model, franchise_history = get_franchise_serving_model(franchise_id)
+        predictions, model_type = predict_event_revenue(
+            feature_df, franchise_id, franchise_model, franchise_history,
+            form_data.get('event_name'), event_date_str,
+        )
         y_hat = float(predictions[0]) if hasattr(predictions, '__len__') else float(predictions)
-        
+
         # Get prediction from model
         # Model predicts Net_Sales (total sales for the event)
         duration = float(form_data.get('duration', 4.0))
@@ -3283,6 +3327,9 @@ def bulk_upload_page():
                      'errors': ['Model not loaded. Please try again later.']},
         )
 
+    # ponytail: history snapshot taken once per upload; outcomes added by this same file aren't seen until the next one
+    franchise_model, franchise_history = get_franchise_serving_model(franchise_id)
+
     for idx, row in df.iterrows():
         row_num = int(idx) + 2  # 1-based, header is row 1
 
@@ -3452,7 +3499,9 @@ def bulk_upload_page():
                 errors.append(f'Row {row_num}: Could not prepare model features for prediction')
                 continue
 
-            predictions, model_type = PROD_MANAGER.predict(feature_df, franchise_id=franchise_id)
+            predictions, model_type = predict_event_revenue(
+                feature_df, franchise_id, franchise_model, franchise_history, event_name, event_date_str,
+            )
             y_hat = float(predictions[0]) if hasattr(predictions, '__len__') else float(predictions)
             total_net_sales = y_hat
             net_sales_per_hour = total_net_sales / duration_hours if duration_hours > 0 else total_net_sales

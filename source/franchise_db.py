@@ -783,7 +783,7 @@ class FranchiseDatabase:
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT prediction_id, duration_hours, actual_total_net_sales, event_features_json,
+            SELECT prediction_id, event_name, duration_hours, actual_total_net_sales, event_features_json,
                    scheduled_event_date, actual_updated_timestamp, created_timestamp
             FROM predictions
             WHERE franchise_id = ?
