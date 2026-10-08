@@ -800,6 +800,28 @@ class FranchiseDatabase:
         conn.close()
         return [dict(row) for row in rows]
     
+    def get_prediction_outcomes(self, model_id: str, franchise_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Predicted vs actual totals for completed events served by a model (all franchises if none given)."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        query = '''
+            SELECT predicted_total_revenue, actual_total_net_sales, duration_hours
+            FROM predictions
+            WHERE model_id = ?
+              AND is_test = 0
+              AND actual_total_net_sales IS NOT NULL
+              AND predicted_total_revenue > 0
+              AND duration_hours > 0
+        '''
+        params: List[Any] = [model_id]
+        if franchise_id is not None:
+            query += ' AND franchise_id = ?'
+            params.append(franchise_id)
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
     def get_recent_predictions(self, franchise_id: str, limit: int = 10) -> List[Dict]:
         """Get recent predictions for a franchise."""
         conn = self.get_connection()

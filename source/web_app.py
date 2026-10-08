@@ -42,12 +42,16 @@ except ImportError:
 try:
     from Kona_AI_ML.franchise_db import FranchiseDatabase
     from Kona_AI_ML.auth import AuthManager, SessionManager
-    from Kona_AI_ML.franchise_model_training import FranchiseModelTrainer, prior_event_features
+    from Kona_AI_ML.franchise_model_training import (
+        FranchiseModelTrainer, prior_event_features, error_ratio_interval, INTERVAL_COVERAGE,
+    )
     from Kona_AI_ML.email_utils import send_password_reset_email, send_username_reminder_email
 except ImportError:
     from franchise_db import FranchiseDatabase
     from auth import AuthManager, SessionManager
-    from franchise_model_training import FranchiseModelTrainer, prior_event_features
+    from franchise_model_training import (
+        FranchiseModelTrainer, prior_event_features, error_ratio_interval, INTERVAL_COVERAGE,
+    )
     from email_utils import send_password_reset_email, send_username_reminder_email
 
 # Use a single source of truth for ZIP cluster prediction (DRY)
@@ -863,15 +867,98 @@ def predict_event_revenue(feature_df, franchise_id, franchise_model, history, ev
     """Predict total net sales with the franchise model when given, else the global ensemble."""
     if franchise_model is not None:
         try:
-            X = feature_df.copy()
-            for name, value in prior_event_features(history, event_name, event_date_str).items():
-                X[name] = value
-            # Align to the columns/order the model was trained on (older models lack the history features).
-            X = X.reindex(columns=franchise_model.feature_names_in_, fill_value=0.0).fillna(0.0).astype(float)
+            X = franchise_model_inputs(feature_df, franchise_model, history, event_name, event_date_str)
             return franchise_model.predict(X), 'franchise_specific'
         except Exception as franchise_error:
             print(f"[WARN] Franchise model prediction failed for {franchise_id}, using merged ensemble: {franchise_error}")
     return PROD_MANAGER.predict(feature_df, franchise_id=franchise_id)
+
+
+def franchise_model_inputs(feature_df, franchise_model, history, event_name, event_date_str):
+    """The exact single-row frame the franchise model is fed for this event."""
+    X = feature_df.copy()
+    for name, value in prior_event_features(history, event_name, event_date_str).items():
+        X[name] = value
+    # Align to the columns/order the model was trained on (older models lack the history features).
+    return X.reindex(columns=franchise_model.feature_names_in_, fill_value=0.0).fillna(0.0).astype(float)
+
+
+def explain_franchise_prediction(X, franchise_model, raw_feature_values=None, top_k=6):
+    """Per-event factor breakdown from the franchise model itself.
+
+    Uses XGBoost's exact tree contributions: each value is how many dollars that
+    feature moved this event's predicted total away from the model's baseline.
+    """
+    import xgboost as xgb
+
+    contribs = franchise_model.get_booster().predict(xgb.DMatrix(X), pred_contribs=True)[0][:-1]  # last is the baseline
+    total = float(np.abs(contribs).sum()) or 1.0
+    explanations = []
+    for idx in np.argsort(-np.abs(contribs))[:top_k]:
+        dollars = float(contribs[idx])
+        if dollars == 0:
+            break
+        feature = X.columns[idx]
+        value = (raw_feature_values or {}).get(feature, X.iloc[0, idx])
+        if hasattr(value, 'item'):
+            value = value.item()
+        explanations.append({
+            'feature': feature,
+            'display_name': humanize_feature_name(feature),
+            'importance': round(100.0 * abs(dollars) / total, 1),
+            'value': value,
+            'explanation': f"{'Raises' if dollars > 0 else 'Lowers'} this event's predicted total by ${abs(dollars):,.0f}",
+        })
+    return explanations
+
+
+MIN_INTERVAL_SAMPLE = 30
+# ponytail: last-resort range for a model with too few completed outcomes anywhere.
+# Measured on production outcomes (Oct 2026, n=707): 80% of actuals fell within
+# 0.24x-1.68x of the merged ensemble's prediction. Re-measure if that model is retrained.
+DEFAULT_INTERVAL_RATIOS = (0.25, 1.7)
+
+
+def get_accuracy_profile(franchise_id, model_type):
+    """How real outcomes have landed relative to the serving model's predictions.
+
+    lower/upper are multipliers for the INTERVAL_COVERAGE range; median and
+    mae_per_hour are None, and sample_size 0, when there is nothing to measure yet.
+    """
+    profile = {
+        'lower': DEFAULT_INTERVAL_RATIOS[0], 'upper': DEFAULT_INTERVAL_RATIOS[1],
+        'median': None, 'mae_per_hour': None, 'sample_size': 0,
+    }
+    try:
+        if model_type == 'franchise_specific':
+            # Out-of-fold cross-validation errors recorded when the model was trained.
+            latest = franchise_db.get_latest_model_by_type(franchise_id, 'franchise_specific') or {}
+            metrics = _parse_training_metadata(latest.get('training_metadata_json')).get('metrics', {})
+            profile['mae_per_hour'] = metrics.get('cv_mae_per_hour') or latest.get('cv_mae')
+            if metrics.get('interval_lower_ratio') is not None and metrics.get('interval_upper_ratio') is not None:
+                profile.update(
+                    lower=float(metrics['interval_lower_ratio']),
+                    upper=float(metrics['interval_upper_ratio']),
+                    median=metrics.get('interval_median_ratio'),
+                    sample_size=int(latest.get('data_records_count') or 0),
+                )
+            return profile
+
+        # Merged ensemble: its real track record, this franchise first, then everyone.
+        for scope in (franchise_id, None):
+            outcomes = franchise_db.get_prediction_outcomes('clean_layers_ensemble', scope)
+            if len(outcomes) < MIN_INTERVAL_SAMPLE:
+                continue
+            actual = np.array([o['actual_total_net_sales'] for o in outcomes], dtype=float)
+            predicted = np.array([o['predicted_total_revenue'] for o in outcomes], dtype=float)
+            hours = np.array([o['duration_hours'] for o in outcomes], dtype=float)
+            interval = error_ratio_interval(actual, predicted)
+            if interval:
+                profile.update(interval, mae_per_hour=float(np.mean(np.abs(actual - predicted) / hours)))
+                break
+    except Exception as profile_error:
+        print(f"[WARN] Could not measure model accuracy for {franchise_id}: {profile_error}")
+    return profile
 
 
 def get_demographics_from_zip(zip_code):
@@ -1313,6 +1400,7 @@ def humanize_feature_name(feature_name):
         'Unemployment_Rate': 'Unemployment Rate',
         'Duration (Hours)': 'Event Duration',
         'Duration': 'Event Duration',
+        'Duration_Hours_x': 'Event Duration',
         'Weather_Score': 'Weather Score',
         'Event_Industry': 'Industry',
         'equipment_type': 'Equipment Type',
@@ -1321,7 +1409,9 @@ def humanize_feature_name(feature_name):
         'TimeOfDay': 'Time of Day',
         'ZIP Cluster': 'ZIP Cluster',
         'Income_Tier': 'Income Tier',
-        'Household_Size': 'Household Size'
+        'Household_Size': 'Household Size',
+        'Prior_Event_Revenue_Per_Hour': 'Past Results for This Event',
+        'Prior_Event_Count': 'Times This Event Ran Before',
     }
 
     if feature_name in friendly_map:
@@ -1453,46 +1543,47 @@ def generate_feature_explanation(feature_name, value, importance, demographics, 
         return f"{feature_name} contributes {importance_pct:.1f}% to the prediction (value: {value})"
 
 
-def generate_confidence_explanation(confidence_pct, cv_mae, prediction, contributions):
+def generate_confidence_explanation(profile, model_type):
     """
-    Generate explanation for prediction confidence level.
-    
+    Plain-language notes on how reliable this prediction is.
+
     Args:
-        confidence_pct: Confidence percentage (0-100)
-        cv_mae: Cross-validation Mean Absolute Error
-        prediction: Predicted value
-        contributions: List of feature contribution dicts with 'importance' keys, or empty list
+        profile: get_accuracy_profile() result for the serving model
+        model_type: 'franchise_specific' or the merged ensemble
     """
     explanations = []
-    
-    # Base confidence assessment
-    if confidence_pct > 80:
-        explanations.append("🟢 High confidence prediction - model has strong agreement on similar events")
-    elif confidence_pct > 60:
-        explanations.append("🟡 Moderate confidence - model shows reasonable consistency for this type of event")
+    coverage_pct = int(round(INTERVAL_COVERAGE * 100))
+    is_franchise = model_type == 'franchise_specific'
+
+    explanations.append(
+        "ℹ️ Predicted by your franchise model, trained on your own completed events"
+        if is_franchise else
+        "ℹ️ Predicted by the merged ensemble model (all franchises)"
+    )
+
+    if profile.get('sample_size'):
+        basis = (
+            f"When tested on {profile['sample_size']} of your completed events"
+            if is_franchise else
+            f"Across {profile['sample_size']} completed events this model predicted"
+        )
+        explanations.append(f"📏 {basis}, {coverage_pct}% of actual results fell inside the range shown")
     else:
-        explanations.append("🟠 Lower confidence - event characteristics show more variability in historical data")
-    
-    # MAE-based explanation
-    mae_explanation = f"Historical model accuracy: ±${cv_mae:.0f} per hour on similar events"
-    explanations.append(mae_explanation)
-    
-    # Feature stability assessment (only if contributions provided)
-    if contributions and isinstance(contributions, list) and len(contributions) > 0:
-        top_contributions = [c for c in contributions if isinstance(c, dict) and c.get('importance', 0) > 5.0]
-        if len(top_contributions) >= 3:
-            explanations.append("✅ Prediction based on multiple strong indicators, increasing reliability")
-        else:
-            explanations.append("⚠️ Prediction relies on fewer strong indicators, consider as estimate")
-    else:
-        explanations.append("ℹ️ Real-time prediction using merged ensemble model")
-    
-    # Prediction magnitude assessment
-    if prediction > 200:
-        explanations.append("💰 High revenue prediction - validate with local market conditions")
-    elif prediction < 50:
-        explanations.append("📊 Conservative revenue estimate - consider cost management")
-    
+        explanations.append(
+            "⚠️ Not enough completed events yet to measure this model's accuracy; the range shown is a broad estimate"
+        )
+
+    if profile.get('mae_per_hour'):
+        explanations.append(f"📊 Typical miss: ±${float(profile['mae_per_hour']):.0f} per hour")
+
+    median = profile.get('median')
+    if median and abs(float(median) - 1.0) > 0.15:
+        direction = 'high' if median < 1 else 'low'
+        explanations.append(
+            f"⚠️ This model has run {direction} on past events: actual sales were typically "
+            f"{float(median) * 100:.0f}% of the prediction"
+        )
+
     return explanations
 
 
@@ -2528,12 +2619,13 @@ def predict():
         total_net_sales = y_hat  # y_hat is already the total Net_Sales prediction
         net_sales_per_hour = total_net_sales / duration if duration > 0 else total_net_sales
         
-        # Confidence intervals (based on MAE)
-        total_lower = max(0.0, total_net_sales * 0.8)  # Conservative 80%
-        total_upper = total_net_sales * 1.2  # Optimistic 120%
+        # Range that has actually held for INTERVAL_COVERAGE of this model's past outcomes
+        accuracy_profile = get_accuracy_profile(franchise_id, model_type)
+        total_lower = max(0.0, total_net_sales * accuracy_profile['lower'])
+        total_upper = total_net_sales * accuracy_profile['upper']
         per_hour_lower = total_lower / duration if duration > 0 else total_lower
         per_hour_upper = total_upper / duration if duration > 0 else total_upper
-        confidence_pct = 80.0
+        confidence_pct = INTERVAL_COVERAGE * 100
         
         # Generate explanations (feature contributions + advanced explanations if available)
         feature_contributions = get_feature_contributions(
@@ -2545,7 +2637,24 @@ def predict():
         )
 
         advanced_explanation = None
-        prediction_explainer = get_prediction_explainer()
+        # The explainers here describe the merged ensemble. When the franchise model
+        # made the prediction, explain that model instead of contradicting it.
+        prediction_explainer = None
+        if model_type == 'franchise_specific':
+            try:
+                feature_contributions = explain_franchise_prediction(
+                    franchise_model_inputs(
+                        feature_df, franchise_model, franchise_history,
+                        form_data.get('event_name'), event_date_str,
+                    ),
+                    franchise_model,
+                    raw_feature_values=raw_feature_values,
+                )
+            except Exception as e:
+                print(f"[WARN] Franchise explanation failed: {e}")
+                feature_contributions = []
+        else:
+            prediction_explainer = get_prediction_explainer()
         if prediction_explainer is not None:
             try:
                 advanced_explanation = prediction_explainer.explain_prediction(
@@ -2587,9 +2696,7 @@ def predict():
                 if raw_feature_values and feature_name in raw_feature_values:
                     feat['value'] = raw_feature_values[feature_name]
         
-        confidence_explanations = generate_confidence_explanation(
-            confidence_pct, float(cv_mae or 312.66), total_net_sales, feature_contributions
-        )
+        confidence_explanations = generate_confidence_explanation(accuracy_profile, model_type)
 
         is_test = str(form_data.get('is_test', '')).lower() in {'1', 'true', 'on', 'yes'}
         event_name = (form_data.get('event_name') or '').strip()
@@ -2645,7 +2752,8 @@ def predict():
             'range_lower': float(total_lower),
             'range_upper': float(total_upper),
             'confidence_percentage': float(confidence_pct),
-            'model_cv_mae': float(cv_mae or 312.66),
+            'model_cv_mae': float(accuracy_profile['mae_per_hour']) if accuracy_profile.get('mae_per_hour') else None,
+            'accuracy_sample_size': int(accuracy_profile.get('sample_size') or 0),
             'model_type': model_type,
             'event_status': submitted_status,
             'duration': f"{duration:.1f}",
@@ -3329,6 +3437,7 @@ def bulk_upload_page():
 
     # ponytail: history snapshot taken once per upload; outcomes added by this same file aren't seen until the next one
     franchise_model, franchise_history = get_franchise_serving_model(franchise_id)
+    accuracy_profiles = {}  # model_type -> profile, measured once per upload
 
     for idx, row in df.iterrows():
         row_num = int(idx) + 2  # 1-based, header is row 1
@@ -3505,8 +3614,10 @@ def bulk_upload_page():
             y_hat = float(predictions[0]) if hasattr(predictions, '__len__') else float(predictions)
             total_net_sales = y_hat
             net_sales_per_hour = total_net_sales / duration_hours if duration_hours > 0 else total_net_sales
-            total_lower = max(0.0, total_net_sales * 0.8)
-            total_upper = total_net_sales * 1.2
+            if model_type not in accuracy_profiles:
+                accuracy_profiles[model_type] = get_accuracy_profile(franchise_id, model_type)
+            total_lower = max(0.0, total_net_sales * accuracy_profiles[model_type]['lower'])
+            total_upper = total_net_sales * accuracy_profiles[model_type]['upper']
             model_id = f'franchise_{franchise_id}' if model_type == 'franchise_specific' else 'clean_layers_ensemble'
             batch_model_id = model_id
         except Exception as pred_err:

@@ -663,17 +663,15 @@
                 </div>
                 
                 <div class="result-card">
-                    <h3>📊 Confidence Level</h3>
-                    <div class="confidence-bar">
-                        <div class="confidence-fill" id="confidenceFill">0%</div>
-                    </div>
+                    <h3>🎯 Typical Accuracy</h3>
                     <p class="results-meta">
-                        Based on model CV MAE: <span id="modelMae">$0.00</span>
+                        Past predictions were off by about <strong id="modelMae">—</strong> on average.
                     </p>
+                    <p class="results-meta" id="accuracyBasis"></p>
                 </div>
                 
                 <div class="result-card">
-                    <h3>📈 Expected Range (95% Confidence)</h3>
+                    <h3>📈 Expected Range (<span id="rangeCoverage">8</span> in 10 events land here)</h3>
                     <div class="range-display">
                         <div class="range-item">
                             <div class="label">Lower Bound</div>
@@ -881,13 +879,16 @@
                     : 'Saved as forecast only. It will not count as realized business until confirmed or completed.';
             document.getElementById('predictionStatus').textContent = statusText;
             
-            // Update confidence
-            const confidencePct = Math.round(data.confidence_percentage);
-            document.getElementById('confidenceFill').textContent = confidencePct + '%';
-            document.getElementById('confidenceFill').style.width = confidencePct + '%';
+            // Update measured accuracy
+            document.getElementById('rangeCoverage').textContent = Math.round(data.confidence_percentage / 10);
+            document.getElementById('accuracyBasis').textContent = data.accuracy_sample_size
+                ? 'Measured on ' + data.accuracy_sample_size + ' completed events.'
+                : 'Not enough completed events yet to measure this model.';
             
-            // Update MAE
-            document.getElementById('modelMae').textContent = '$' + formatCurrency(data.model_cv_mae);
+            // Typical miss per hour
+            document.getElementById('modelMae').textContent = data.model_cv_mae
+                ? '±$' + formatCurrency(data.model_cv_mae) + ' per hour'
+                : 'an unknown amount';
             
             // Update ranges
             document.getElementById('lowerBound').textContent = '$' + formatCurrency(data.range_lower);
@@ -1036,6 +1037,9 @@
             // Display advanced explanations if available
             if (data.advanced_explanation) {
                 displayAdvancedExplanations(data.advanced_explanation);
+            } else {
+                // Don't leave a previous prediction's analysis on screen.
+                document.getElementById('advancedExplanationCard').style.display = 'none';
             }
             
             // Show results
