@@ -14,6 +14,32 @@ from xgboost import XGBRegressor
 MIN_TRAINING_REVENUE_PER_HOUR = 50.0
 
 
+# Share of real outcomes the displayed prediction range is meant to contain.
+INTERVAL_COVERAGE = 0.8
+
+
+def error_ratio_interval(actuals, predictions, coverage: float = INTERVAL_COVERAGE) -> Optional[Dict[str, float]]:
+    """Empirical range of actual/predicted, e.g. lower=0.6, upper=1.5 for 80% coverage.
+
+    Multiplying a new prediction by these gives a range that held for `coverage`
+    of past out-of-sample outcomes. Relative rather than absolute because misses
+    scale with event size.
+    """
+    actuals = np.asarray(actuals, dtype=float)
+    predictions = np.asarray(predictions, dtype=float)
+    usable = np.isfinite(actuals) & np.isfinite(predictions) & (predictions > 0)
+    if not usable.any():
+        return None
+    ratios = actuals[usable] / predictions[usable]
+    tail = (1.0 - coverage) / 2.0
+    return {
+        'lower': float(np.quantile(ratios, tail)),
+        'median': float(np.median(ratios)),
+        'upper': float(np.quantile(ratios, 1.0 - tail)),
+        'sample_size': int(usable.sum()),
+    }
+
+
 def normalize_event_name(name: Optional[str]) -> str:
     """Key for matching repeat occurrences of the same event."""
     return ' '.join(str(name or '').lower().split())
@@ -148,6 +174,9 @@ class FranchiseModelTrainer:
             mae_per_hour = mae_total
             std_per_hour = 0.0
 
+        # Out-of-fold errors, so this is how far real outcomes land from predictions.
+        interval = error_ratio_interval(y, cv_predictions) or {}
+
         if r2_total < self.min_r2:
             message = f'Candidate franchise model scored R2={r2_total:.3f}; threshold is {self.min_r2:.2f}. Continuing with merged model.'
             self.franchise_db.update_franchise_model_status(
@@ -194,6 +223,9 @@ class FranchiseModelTrainer:
                 'cv_mae_total': mae_total,
                 'rmse_total': rmse_total,
                 'r2': r2_total,
+                'interval_lower_ratio': interval.get('lower'),
+                'interval_median_ratio': interval.get('median'),
+                'interval_upper_ratio': interval.get('upper'),
             },
             'feature_names': list(X.columns),
             'training_history': training_history,
