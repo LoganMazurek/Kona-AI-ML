@@ -7,7 +7,7 @@ pandas>=3.0.3
 # numba versions that have no 3.14 wheel and refuse to build from source on 3.14.
 # Dependabot's numpy>=2.5.0 bump is unmergeable until numba supports numpy 2.5.
 numpy>=1.25,<2.5
-scikit-learn>=1.9.0
+scikit-learn>=1.9.1
 xgboost>=3.3.0
 requests>=2.34.2
 uszipcode==1.0.1
